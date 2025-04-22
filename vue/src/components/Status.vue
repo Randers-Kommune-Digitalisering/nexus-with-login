@@ -1,12 +1,22 @@
 <script setup>
 import { ref } from 'vue';
+
 const statusFlask = ref(null);
 
-fetch('/api/status')
-    .then(response => response = response.json())
-    .then(value => statusFlask.value = value.success ? "Connected" : null)
-    .then(value => console.log("Flask status: \n" + value))
+const fetchStatus = () => {
+    fetch('/api/status')
+        .then(response => response.json())
+        .then(value => statusFlask.value = value.success ? "Connected" : null)
+        .then(value => console.log("Flask status: \n" + value));
+};
 
+// Fetch status on component mount
+fetchStatus();
+
+// Expose the fetchStatus method to the parent
+defineExpose({
+    fetchStatus
+});
 </script>
 
 <template>

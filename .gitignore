@@ -76,3 +76,6 @@ coverage
 
 # virtualenv
 .venv
+
+sessions
+flask_session

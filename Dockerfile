@@ -31,7 +31,7 @@ COPY --from=vue-build /app/dist ./dist
 COPY flask/src .
 
 # Install python packages
-RUN pip install --upgrade pip
+RUN pip install --upgrade pip setuptools wheel
 RUN pip install -r requirements.txt
 
 # Open port
