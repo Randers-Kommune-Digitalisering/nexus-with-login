@@ -1,6 +1,7 @@
 <script setup>
     import Content from '@/components/Content.vue'
     import Status from '@/components/Status.vue'
+    import Homeressource from '@/components/Homeressource.vue'
 
     import IconOK from '@/components/icons/IconOK.vue'
     import IconRSS from '@/components/icons/IconRSS.vue'
@@ -75,6 +76,7 @@
         <template #heading>Status på opsætning</template>
         
         <Status ref="statusRef" />
+        <Homeressource />
     </Content>
 
 </template>
