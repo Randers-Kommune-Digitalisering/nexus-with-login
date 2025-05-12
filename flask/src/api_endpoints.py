@@ -15,5 +15,5 @@ def status():
 @api_endpoints.route('/home-ressource', methods=['GET'])
 def home_ressource():
     headers = {"Authorization": "Bearer " + session['token']['access_token']}
-    res = requests.get('https://nexuspartner.nexus-review.kmd.dk/api/core/mobile/nexuspartner/v2/', headers=headers)
+    res = requests.get('https://randers.nexus-review.kmd.dk/api/core/mobile/randers/v2/', headers=headers)
     return res.json()
