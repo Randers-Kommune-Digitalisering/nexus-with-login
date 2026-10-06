@@ -5,7 +5,7 @@ from flask import Blueprint, redirect, url_for, request, session
 from authlib.integrations.flask_client import OAuth
 from flask_session import Session
 
-from utils.config import COOKIE_SECRET, CLIENT_ID, CLIENT_SECRET, AUTH_URL, AUTH_PATH, AUTH_REALM
+from utils.config import COOKIE_SECRET, CLIENT_ID, CLIENT_SECRET, AUTH_URL, AUTH_PATH, AUTH_REALM, APP_URL
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,6 @@ def add_user_handling(app):
 
     @app.before_request
     def check_authenticated():
-        print(request.path)
         # Always allow access to assets (e.g. css, js, images)
         if request.path.startswith('/assets/'):
             pass
@@ -43,7 +42,9 @@ def add_user_handling(app):
     @user_endpoints.route('/login', methods=['GET'])
     def login():
         # Redirect to the OpenID provider for authorization - redirects to /user/auth
-        redirect_uri = url_for('user.auth', _external=True)
+        redirect_uri = url_for('user.auth', _external=False)
+        redirect_uri = APP_URL + redirect_uri
+        print(redirect_uri)
         return oauth.openid.authorize_redirect(redirect_uri)
 
     @user_endpoints.route('/auth', methods=['GET'])
