@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 # Vue-Python-Template
-=======
-# Vue-Python-Tempplate
->>>>>>> develop
 Template for vue and python projects.
 NB: backend endpoints er åbne udtil (samme som frontend'en). Hvis der skal bruges en "rigtig" backend - deploy [vue](https://github.com/Randers-Kommune-Digitalisering/vue-js-template) og [flask](https://github.com/Randers-Kommune-Digitalisering/python-app-template) i hver sin pod.
 
