@@ -180,9 +180,10 @@
         padding-top: 2.5rem;
         padding-right: 0rem;
 
-        right: 50%;
-        transform: translateX(-42.5rem);
-        width: auto;
+        right: auto;
+        left: 0rem;
+        transform: none;
+        width: 20rem;
         height: 100vh;
 
         border-bottom: 0rem;

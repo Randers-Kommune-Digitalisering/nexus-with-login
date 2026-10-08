@@ -76,7 +76,7 @@
         <template #heading>Status på opsætning</template>
         
         <Status ref="statusRef" />
-        <Homeressource />
+        <Homeressource v-if="isLoggedIn" />
     </Content>
 
 </template>
