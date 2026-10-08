@@ -20,4 +20,27 @@ NB: backend endpoints er åbne udtil (samme som frontend'en). Hvis der skal brug
 * Lint: ```flake8 python/src tests --count --select=E9,F63,F7,F82 --show-source --statistics```
 * Unit tests: ``` pytest ```
 
+## Nexus API from Vue
+
+After login, Vue calls Flask on the same origin. `GET /api/home-ressource` fetches the
+Nexus home resource. Other HAL links under
+`https://randers.nexus.kmd.dk/api/core/mobile/randers/v2/` can be requested through
+`/api/nexus/<path>` with GET, POST, or PUT. Resolve relative links against the Nexus
+URL of the response that supplied them, then send the path and query to the local
+proxy. Flask keeps the user's access token in its session and sends it to Nexus;
+never put the client secret or access token in Vue.
+
+The default Nexus origin is set by `BASE_URL` and its API prefix by `BASE_PATH`.
+Set them in the app environment when targeting a different Nexus installation;
+keep `BASE_URL` to the origin, without the API path. `APP_URL` is the separate
+public URL used for the login redirect.
+
+For POST and PUT, first GET `/api/csrf` and include its `token` in the
+`X-CSRF-Token` header. Send the request body and its `Content-Type`, plus
+`If-Match` when updating a resource with an ETag. The proxy preserves Nexus
+status codes, response bodies, Content-Type, ETag, and Location. It accepts only
+the configured Nexus API prefix, rejects redirects, and limits write bodies to 1 MB.
+The proxy does not filter Nexus responses: limit the client's Nexus permissions
+and request only data needed by the UI, especially when it contains personal data.
+
 
