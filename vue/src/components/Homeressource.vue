@@ -13,7 +13,7 @@ const loading = ref(true);
 const fetching = ref(false);
 const selectedList = computed(() => citizenLists.value.find(list => list.id === selectedId.value));
 const additionalInfoKeys = computed(() => [...new Set(
-    patientRecords.value.flatMap(patient => Object.keys(patient.additionalInfo ?? {}))
+    patientRecords.value.flatMap(patient => Object.keys(patient.additionalInfo ?? {}).filter(key => key.toLowerCase() !== 'tekst'))
 )]);
 const visiblePages = computed(() => {
     const start = Math.min(Math.max(currentPageIndex.value - 2, 0), Math.max(pages.value.length - 5, 0));
@@ -28,29 +28,37 @@ const formatAddress = (address) => {
         .map(value => String(value ?? '').trim()).filter(Boolean).join(' ');
     return [...lines, locality].filter(Boolean).join(', ');
 };
+const formatTime = (timestamp) => {
+    if (!Number.isFinite(timestamp)) return '';
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('da-DK', {
+        timeZone: 'Europe/Copenhagen', day: '2-digit', month: '2-digit', year: '2-digit',
+        hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(timestamp).map(({ type, value }) => [type, value]));
+    return `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}`;
+};
 let preferencesUrl;
 let contentUrl;
 let selectionRequest = 0;
 
 const additionalInfoForPatient = async (patient) => {
     const patientId = String(patient?.id ?? '');
-    if (!/^\d+$/.test(patientId)) return {};
+    if (!/^\d+$/.test(patientId)) return { additionalInfo: {}, referenceDate: null };
     const url = `/api/nexus/patients/${patientId}/pathways/flatReferences?filterId=749`;
     try {
         const response = await fetch(url);
-        if (!response.ok) return {};
+        if (!response.ok) return { additionalInfo: {}, referenceDate: null };
         const references = await response.json();
-        if (!Array.isArray(references)) return {};
+        if (!Array.isArray(references)) return { additionalInfo: {}, referenceDate: null };
         const latest = references.reduce((newest, entry) => {
             const date = Date.parse(String(entry?.date ?? '').replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
             return Number.isFinite(date) && (!newest || date > newest.date) ? { entry, date } : newest;
-        }, null)?.entry;
-        if (!Array.isArray(latest?.additionalInfo)) return {};
-        return Object.fromEntries(latest.additionalInfo
+        }, null);
+        if (!Array.isArray(latest?.entry?.additionalInfo)) return { additionalInfo: {}, referenceDate: latest?.date ?? null };
+        return { referenceDate: latest.date, additionalInfo: Object.fromEntries(latest.entry.additionalInfo
             .filter(item => item?.type === 'keyValue' && typeof item.key === 'string' && item.key.trim())
-            .map(({ key, value }) => [key.trim().replace(/:+$/, ''), value ?? '']));
+            .map(({ key, value }) => [key.trim().replace(/:+$/, ''), value ?? ''])) };
     } catch {
-        return {};
+        return { additionalInfo: {}, referenceDate: null };
     }
 };
 
@@ -106,7 +114,7 @@ const fetchPatientPage = async (pageIndex) => {
         if (requestId !== selectionRequest) return;
         const rows = await Promise.all(records.map(async patient => ({
             ...patient,
-            additionalInfo: await additionalInfoForPatient(patient),
+            ...await additionalInfoForPatient(patient),
         })));
         if (requestId === selectionRequest) {
             patientRecords.value = rows;
@@ -204,6 +212,7 @@ onMounted(loadCitizenLists);
                         <th scope="col" class="single-line">Mobiltelefon</th>
                         <th scope="col" class="single-line">Arbejdstelefon</th>
                         <th v-for="key in additionalInfoKeys" :key="key" scope="col">{{ key }}</th>
+                        <th scope="col" class="single-line">Tid</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -217,6 +226,7 @@ onMounted(loadCitizenLists);
                         <td v-for="key in additionalInfoKeys" :key="key">
                             <span class="clamped extra-text">{{ patient.additionalInfo?.[key] }}</span>
                         </td>
+                        <td class="single-line">{{ formatTime(patient.referenceDate) }}</td>
                     </tr>
                 </tbody>
             </table>
@@ -286,12 +296,12 @@ onMounted(loadCitizenLists);
     }
     .name-text {
         display: block;
-        width: 20rem;
+        width: 11rem;
         overflow-wrap: anywhere;
     }
     .address-text {
         display: block;
-        width: 30rem;
+        width: 16rem;
         overflow-wrap: anywhere;
     }
     .extra-text {

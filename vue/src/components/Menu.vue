@@ -183,7 +183,7 @@
         right: auto;
         left: 0rem;
         transform: none;
-        width: 16rem;
+        width: 14rem;
         height: 100vh;
 
         border-bottom: 0rem;
@@ -191,6 +191,9 @@
         .header a
         {
             padding-right: 1.5rem;
+            max-width: 100%;
+            white-space: normal;
+            text-align: right;
 
             border-bottom: 0rem;
             border-right: 0.4rem solid #ffffff00;

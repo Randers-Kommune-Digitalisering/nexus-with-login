@@ -68,7 +68,7 @@ main
     {
         /* Remove padding for header as header becomes side menu */
         padding-top: 0rem;
-        margin-left: 16rem;
+        margin-left: 14rem;
         padding-left: 2rem;
         padding-right: 2rem;
     }
