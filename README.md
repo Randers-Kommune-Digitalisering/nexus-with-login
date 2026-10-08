@@ -35,12 +35,22 @@ Set them in the app environment when targeting a different Nexus installation;
 keep `BASE_URL` to the origin, without the API path. `APP_URL` is the separate
 public URL used for the login redirect.
 
+Set `ALLOWED_CITIZEN_LIST_IDS` in the app's runtime environment (for example, on
+the Kubernetes pod) to comma-separated numeric preference IDs such as `101,102`.
+After login, Vue fetches the IDs from `GET /api/citizen-list-config` and displays
+only matching `CITIZEN_LIST` entries. If unset, the default is `5327,7279`;
+explicitly setting it to an empty string shows no lists. Restart the pod after
+changing its environment; the Vue image does not need rebuilding.
+The IDs are sent to the browser, so do not put secrets in this setting. This is
+only a UI filter, not access control: Flask still proxies direct requests and
+Nexus permissions must restrict access to sensitive data.
+
 For POST and PUT, first GET `/api/csrf` and include its `token` in the
 `X-CSRF-Token` header. Send the request body and its `Content-Type`, plus
 `If-Match` when updating a resource with an ETag. The proxy preserves Nexus
 status codes, response bodies, Content-Type, ETag, and Location. It accepts only
 the configured Nexus API prefix, rejects redirects, and limits write bodies to 1 MB.
-The proxy does not filter Nexus responses: limit the client's Nexus permissions
+Nexus responses are not filtered by Flask: limit the client's Nexus permissions
 and request only data needed by the UI, especially when it contains personal data.
 
 

@@ -56,7 +56,7 @@ main
     .content
     {
         /* Set width of main content */
-        width: 85rem;
+        width: 100%;
 
         border-left: 0.1rem solid var(--color-border);
         border-right: 0.1rem solid var(--color-border);
@@ -68,6 +68,9 @@ main
     {
         /* Remove padding for header as header becomes side menu */
         padding-top: 0rem;
+        margin-left: 20rem;
+        padding-left: 2rem;
+        padding-right: 2rem;
     }
 }
 </style>

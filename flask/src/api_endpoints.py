@@ -2,7 +2,7 @@ import logging
 import hmac
 import secrets
 import requests
-from utils.config import MAX_WRITE_BYTES, BASE_URL, BASE_PATH
+from utils.config import MAX_WRITE_BYTES, BASE_URL, BASE_PATH, ALLOWED_CITIZEN_LIST_IDS
 
 from flask import Blueprint, Response, jsonify, request, session
 
@@ -19,6 +19,15 @@ def status():
 @api_endpoints.route('/home-ressource', methods=['GET'])
 def home_ressource():
     return nexus_request('')
+
+
+@api_endpoints.route('/citizen-list-config', methods=['GET'])
+def citizen_list_config():
+    if not session.get('token', {}).get('access_token'):
+        return jsonify(error='Unauthorized'), 401
+    response = jsonify(allowedCitizenListIds=ALLOWED_CITIZEN_LIST_IDS)
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 @api_endpoints.route('/csrf', methods=['GET'])
