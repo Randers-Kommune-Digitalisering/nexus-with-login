@@ -12,9 +12,47 @@ const error = ref('');
 const loading = ref(true);
 const fetching = ref(false);
 const selectedList = computed(() => citizenLists.value.find(list => list.id === selectedId.value));
+const additionalInfoKeys = computed(() => [...new Set(
+    patientRecords.value.flatMap(patient => Object.keys(patient.additionalInfo ?? {}))
+)]);
+const visiblePages = computed(() => {
+    const start = Math.min(Math.max(currentPageIndex.value - 2, 0), Math.max(pages.value.length - 5, 0));
+    return Array.from({ length: Math.min(pages.value.length, 5) }, (_, index) => start + index);
+});
+const formatAddress = (address) => {
+    if (!address) return '';
+    const lines = [1, 2, 3, 4, 5]
+        .map(index => String(address[`addressLine${index}`] ?? '').trim().replace(/,+$/, '').trim())
+        .filter(Boolean);
+    const locality = [address.postalCode, address.postalDistrict]
+        .map(value => String(value ?? '').trim()).filter(Boolean).join(' ');
+    return [...lines, locality].filter(Boolean).join(', ');
+};
 let preferencesUrl;
 let contentUrl;
 let selectionRequest = 0;
+
+const additionalInfoForPatient = async (patient) => {
+    const patientId = String(patient?.id ?? '');
+    if (!/^\d+$/.test(patientId)) return {};
+    const url = `/api/nexus/patients/${patientId}/pathways/flatReferences?filterId=749`;
+    try {
+        const response = await fetch(url);
+        if (!response.ok) return {};
+        const references = await response.json();
+        if (!Array.isArray(references)) return {};
+        const latest = references.reduce((newest, entry) => {
+            const date = Date.parse(String(entry?.date ?? '').replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
+            return Number.isFinite(date) && (!newest || date > newest.date) ? { entry, date } : newest;
+        }, null)?.entry;
+        if (!Array.isArray(latest?.additionalInfo)) return {};
+        return Object.fromEntries(latest.additionalInfo
+            .filter(item => item?.type === 'keyValue' && typeof item.key === 'string' && item.key.trim())
+            .map(({ key, value }) => [key.trim().replace(/:+$/, ''), value ?? '']));
+    } catch {
+        return {};
+    }
+};
 
 const loadCitizenLists = async () => {
     try {
@@ -65,8 +103,13 @@ const fetchPatientPage = async (pageIndex) => {
         const records = Array.isArray(data) ? data :
             [data?.patients, data?.items, data?.content, data?._embedded?.patients].find(Array.isArray);
         if (!records) throw new Error('Unexpected patient data response');
+        if (requestId !== selectionRequest) return;
+        const rows = await Promise.all(records.map(async patient => ({
+            ...patient,
+            additionalInfo: await additionalInfoForPatient(patient),
+        })));
         if (requestId === selectionRequest) {
-            patientRecords.value = records;
+            patientRecords.value = rows;
             currentPageIndex.value = pageIndex;
         }
     } catch (cause) {
@@ -150,18 +193,46 @@ onMounted(loadCitizenLists);
         <p v-else-if="error" role="alert">{{ error }}</p>
         <p v-else-if="!citizenLists.length" role="status">Ingen borgerlister fundet.</p>
         <p v-else-if="selectedId && !totalItems" role="status">Ingen borgere fundet.</p>
-        <ol v-if="patientRecords.length" class="patient-records">
-            <li v-for="(patient, index) in patientRecords" :key="patient.id ?? index">
-                <pre>{{ JSON.stringify(patient, null, 2) }}</pre>
-            </li>
-        </ol>
+        <div v-if="patientRecords.length" class="table-scroll">
+            <table class="patient-table">
+                <thead>
+                    <tr>
+                        <th scope="col">CPR</th>
+                        <th scope="col">Navn</th>
+                        <th scope="col">Adresse</th>
+                        <th scope="col">Hjemmetelefon</th>
+                        <th scope="col">Mobiltelefon</th>
+                        <th scope="col">Arbejdstelefon</th>
+                        <th v-for="key in additionalInfoKeys" :key="key" scope="col">{{ key }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="(patient, index) in patientRecords" :key="patient.id ?? index">
+                        <td>{{ patient.patientIdentifier?.identifier }}</td>
+                        <td>{{ patient.fullReversedName }}</td>
+                        <td>{{ formatAddress(patient.currentAddress) }}</td>
+                        <td>{{ patient.homePhoneNumber }}</td>
+                        <td>{{ patient.mobilePhoneNumber }}</td>
+                        <td>{{ patient.workPhoneNumber }}</td>
+                        <td v-for="key in additionalInfoKeys" :key="key">{{ patient.additionalInfo?.[key] }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
         <nav v-if="pages.length > 1" class="pagination" aria-label="Borgerliste sider">
             <button type="button" :disabled="fetching || currentPageIndex === 0"
-                @click="fetchPatientPage(currentPageIndex - 1)">Forrige</button>
-            <span>Side {{ currentPageIndex + 1 }} af {{ pages.length }} ({{ totalItems }} borgere)</span>
+                :class="{ disabled: fetching || currentPageIndex === 0 }"
+                aria-label="Forrige side" @click="fetchPatientPage(currentPageIndex - 1)">&lt;</button>
+            <button v-for="pageIndex in visiblePages" :key="pageIndex" type="button"
+                :class="{ selected: currentPageIndex === pageIndex, disabled: fetching }"
+                :disabled="fetching || currentPageIndex === pageIndex"
+                :aria-current="currentPageIndex === pageIndex ? 'page' : undefined"
+                @click="fetchPatientPage(pageIndex)">{{ pageIndex + 1 }}</button>
             <button type="button" :disabled="fetching || currentPageIndex === pages.length - 1"
-                @click="fetchPatientPage(currentPageIndex + 1)">Næste</button>
+                :class="{ disabled: fetching || currentPageIndex === pages.length - 1 }"
+                aria-label="Næste side" @click="fetchPatientPage(currentPageIndex + 1)">&gt;</button>
         </nav>
+        <p v-if="pages.length > 1" class="page-summary">{{ totalItems }} borgere</p>
     </div>
 </template>
 
@@ -180,23 +251,57 @@ onMounted(loadCitizenLists);
         flex: 1 1 24rem;
         min-width: 0;
     }
-    .patient-records {
-        padding-left: 1.5rem;
+    .table-scroll {
+        max-width: 100%;
+        overflow-x: auto;
     }
-    .patient-records li {
-        border-bottom: 1px solid var(--color-border);
+    .patient-table {
+        width: 100%;
+        min-width: 78rem;
+        border-collapse: collapse;
+    }
+    .patient-table th, .patient-table td {
+        text-align: left;
+        vertical-align: top;
+        overflow-wrap: anywhere;
+    }
+    .patient-table th:not(:last-child), .patient-table td:not(:last-child) {
+        padding-right: 1rem;
     }
     .pagination {
         display: flex;
         flex-wrap: wrap;
-        align-items: center;
-        gap: 1rem;
+        justify-content: center;
         margin-top: 1rem;
     }
-    pre {
-        max-height: 30rem;
-        overflow: auto;
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
+    .pagination > button {
+        font: inherit;
+        font-weight: 400;
+        letter-spacing: 0;
+        text-transform: none;
+        height: auto;
+        line-height: 1.2;
+        margin: 0;
+        padding: 0.5em 1rem;
+        border: 0.1rem solid var(--color-border);
+        background-color: var(--color-bg);
+        color: var(--color-text);
+        border-radius: 0;
+    }
+    .pagination > button:first-child {
+        border-radius: 0.5rem 0 0 0.5rem;
+    }
+    .pagination > button:last-child {
+        border-radius: 0 0.5rem 0.5rem 0;
+    }
+    .pagination > button:disabled {
+        background-color: var(--color-bg) !important;
+    }
+    .pagination > button.selected:disabled {
+        background-color: var(--color-border) !important;
+    }
+    .page-summary {
+        margin-top: 0.5rem;
+        text-align: center;
     }
 </style>
