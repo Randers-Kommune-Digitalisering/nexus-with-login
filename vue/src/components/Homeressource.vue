@@ -3,12 +3,13 @@ import { computed, onMounted, ref } from 'vue';
 
 const citizenLists = ref([]);
 const selectedId = ref('');
-const selectedResource = ref(null);
+const selectedContent = ref(null);
 const error = ref('');
 const loading = ref(true);
 const fetching = ref(false);
 const selectedList = computed(() => citizenLists.value.find(list => list.id === selectedId.value));
 let preferencesUrl;
+let selectionRequest = 0;
 
 const loadCitizenLists = async () => {
     try {
@@ -43,10 +44,14 @@ const loadCitizenLists = async () => {
 
 const fetchSelected = async () => {
     const selected = selectedList.value;
-    if (!selected?.href) return;
-
-    selectedResource.value = null;
+    const requestId = ++selectionRequest;
+    selectedContent.value = null;
     error.value = '';
+    if (!selected?.href) {
+        fetching.value = false;
+        return;
+    }
+
     fetching.value = true;
     try {
         const target = new URL(selected.href, preferencesUrl);
@@ -59,11 +64,27 @@ const fetchSelected = async () => {
 
         const response = await fetch(`/api/nexus/preferences/CITIZEN_LIST/${id}`);
         if (!response.ok) throw new Error(`Citizen list: HTTP ${response.status}`);
-        if (selectedId.value === selected.id) selectedResource.value = await response.json();
+        const detail = await response.json();
+        if (requestId !== selectionRequest) return;
+
+        const contentHref = detail?._links?.content?.href;
+        if (typeof contentHref !== 'string' || !contentHref) throw new Error('Missing citizen list content link');
+        const contentUrl = new URL(contentHref, target);
+        const apiPrefix = preferencesUrl.pathname.slice(0, -'preferences'.length);
+        const resourcePath = contentUrl.pathname.slice(apiPrefix.length);
+        if (contentUrl.origin !== preferencesUrl.origin || !contentUrl.pathname.startsWith(apiPrefix)
+            || !resourcePath || contentUrl.hash) {
+            throw new Error('Invalid citizen list content link');
+        }
+
+        const contentResponse = await fetch(`/api/nexus/${resourcePath}${contentUrl.search}`);
+        if (!contentResponse.ok) throw new Error(`Citizen list content: HTTP ${contentResponse.status}`);
+        const content = await contentResponse.json();
+        if (requestId === selectionRequest) selectedContent.value = content;
     } catch (cause) {
-        error.value = cause.message;
+        if (requestId === selectionRequest) error.value = cause.message;
     } finally {
-        fetching.value = false;
+        if (requestId === selectionRequest) fetching.value = false;
     }
 };
 
@@ -75,19 +96,16 @@ onMounted(loadCitizenLists);
     <div class="citizen-list">
         <label for="citizen-list-select">Borgerliste</label>
         <div class="controls">
-            <select id="citizen-list-select" v-model="selectedId" :disabled="loading || fetching"
-                @change="selectedResource = null">
+            <select id="citizen-list-select" v-model="selectedId" :disabled="loading" @change="fetchSelected">
                 <option value="">Vælg en liste</option>
                 <option v-for="list in citizenLists" :key="list.id" :value="list.id">{{ list.name }}</option>
             </select>
-            <button type="button" :disabled="!selectedList?.href || loading || fetching" @click="fetchSelected">
-                {{ fetching ? 'Henter…' : 'Hent liste' }}
-            </button>
         </div>
         <p v-if="loading" role="status">Henter lister…</p>
+        <p v-else-if="fetching" role="status">Henter liste…</p>
         <p v-else-if="error" role="alert">{{ error }}</p>
         <p v-else-if="!citizenLists.length" role="status">Ingen borgerlister fundet.</p>
-        <pre v-if="selectedResource !== null">{{ JSON.stringify(selectedResource, null, 2) }}</pre>
+        <pre v-if="selectedContent !== null">{{ JSON.stringify(selectedContent, null, 2) }}</pre>
     </div>
 </template>
 
@@ -105,9 +123,6 @@ onMounted(loadCitizenLists);
     select {
         flex: 1 1 24rem;
         min-width: 0;
-    }
-    button {
-        flex: 0 0 auto;
     }
     pre {
         max-height: 30rem;
