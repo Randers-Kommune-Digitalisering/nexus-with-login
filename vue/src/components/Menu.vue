@@ -183,7 +183,7 @@
         right: auto;
         left: 0rem;
         transform: none;
-        width: 20rem;
+        width: 16rem;
         height: 100vh;
 
         border-bottom: 0rem;

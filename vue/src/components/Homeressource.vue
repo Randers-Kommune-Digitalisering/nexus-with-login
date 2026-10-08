@@ -272,7 +272,7 @@ onMounted(loadCitizenLists);
         overflow-wrap: normal;
     }
     .patient-table th:not(:last-child), .patient-table td:not(:last-child) {
-        padding-right: 1rem;
+        padding-right: 0.5rem;
     }
     .single-line {
         white-space: nowrap;
@@ -286,7 +286,7 @@ onMounted(loadCitizenLists);
     }
     .name-text {
         display: block;
-        width: 24rem;
+        width: 20rem;
         overflow-wrap: anywhere;
     }
     .address-text {
