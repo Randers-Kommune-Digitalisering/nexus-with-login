@@ -1,42 +1,44 @@
 <script setup>
     import Content from '@/components/Content.vue'
-    import Status from '@/components/Status.vue'
     import Homeressource from '@/components/Homeressource.vue'
 
-    import IconOK from '@/components/icons/IconOK.vue'
-    import IconRSS from '@/components/icons/IconRSS.vue'
     import { ref } from 'vue';
 
     const isLoggedIn = ref(false);
     const userName = ref(null);
-    const statusRef = ref(null);
+    const homeResource = ref(null);
+    const loginError = ref('');
 
     const toggleLogin = () => {
-
-        fetch('/user/profile')
+        fetch('/api/home-ressource')
             .then(response => {
-                console.log('Response status:', response.status);
                 if (response.status === 401) {
                     isLoggedIn.value = false;
-                } else if (response.status === 200) {
-                    response.json()
-                        .then(data => {
-                            userName.value = data.given_name;
-                            isLoggedIn.value = true;
-                            statusRef.value.fetchStatus();
-                        });
+                    userName.value = null;
+                    homeResource.value = null;
+                    return null;
                 }
+                if (!response.ok) throw new Error('Home resource unavailable');
+                return response.json();
             })
+            .then(home => {
+                if (!home) return;
+                userName.value = home?.professional?.fullName || null;
+                homeResource.value = home;
+                isLoggedIn.value = true;
+            })
+            .catch(() => { loginError.value = 'Kunne ikke hente brugeroplysninger.'; });
     };
 
     const loginLogout = () => {
         if (isLoggedIn.value) {
             fetch('/user/logout')
                 .then(response => {
-                    console.log('Response status:', response.status);
                     if (response.status === 200) {
                         isLoggedIn.value = false;
-                        statusRef.value.fetchStatus();
+                        userName.value = null;
+                        homeResource.value = null;
+                        loginError.value = '';
                     }
                 });
         } else {
@@ -52,31 +54,30 @@
     <h2>Randers Nexus</h2>
 
     <Content>
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <h3 v-if="isLoggedIn" style="margin: 0;">Hej {{ userName }}</h3>
+        <div class="session-controls">
+            <p v-if="isLoggedIn" class="welcome">Logget ind<span v-if="userName"> som <strong>{{ userName }}</strong></span></p>
             <button @click="loginLogout">
-            {{ isLoggedIn ? 'Logout' : 'Login' }}
+            {{ isLoggedIn ? 'Log ud' : 'Log ind' }}
             </button>
         </div>
+        <p v-if="loginError" role="alert">{{ loginError }}</p>
     </Content>
-    
-    <Content>
-        <template #icon>
-            <IconOK />
-        </template>
-        <template #heading>Sådan, det ser ud til at køre!</template>
-        
-        Du har nu succesfuldt startet et nyt projekt med <a href="https://github.com/Randers-Kommune-Digitalisering/vue-python-template" target="_blank" rel="noopener">Randers Kommune's Flask + Vue template</a>.
-    </Content>
-
-    <Content>
-        <template #icon>
-            <IconRSS />
-        </template>
-        <template #heading>Status på opsætning</template>
-        
-        <Status ref="statusRef" />
-        <Homeressource v-if="isLoggedIn" />
-    </Content>
+    <Homeressource v-if="isLoggedIn" :home-resource="homeResource" />
 
 </template>
+
+<style scoped>
+.session-controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+}
+.welcome {
+    margin: 0;
+    font-size: 1.4rem;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+</style>

@@ -1,6 +1,7 @@
 # Vue/Flask App brugerdefineret Nexus indhold
 App der håndterer log ind / brygerstyring til Nexus og viser brugerdefineret indhold + brugedefineret interaktion.
 
+**NB**: auto deployer alle pushed commits direkte til prod!
 
 ## Kørsel af frontend + backend i docker
 * Kør ```docker-compose up``` i top dir

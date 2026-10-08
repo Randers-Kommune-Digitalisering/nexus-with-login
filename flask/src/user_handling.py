@@ -53,14 +53,14 @@ def add_user_handling(app):
         session['token'] = oauth.openid.authorize_access_token()
         return redirect('/')
 
-    @user_endpoints.route('/profile', methods=['GET'])
-    def profile():
-        # Endpoint to get user profile information
-        # this is implemented as just parsing id token, alternative ideas:
-        #   - could call openid userinfo endpoint to get more information
-        #   - could extract specific information from the id token (e.g. email, name, etc.)
-        user_info = session['token']['userinfo']
-        return user_info
+    # @user_endpoints.route('/profile', methods=['GET'])
+    # def profile():
+    #     # Endpoint to get user profile information
+    #     # this is implemented as just parsing id token, alternative ideas:
+    #     #   - could call openid userinfo endpoint to get more information
+    #     #   - could extract specific information from the id token (e.g. email, name, etc.)
+    #     user_info = session['token']['userinfo']
+    #     return user_info
 
     @user_endpoints.route('/logout', methods=['GET'])
     def logout():
