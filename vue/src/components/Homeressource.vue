@@ -197,24 +197,26 @@ onMounted(loadCitizenLists);
             <table class="patient-table">
                 <thead>
                     <tr>
-                        <th scope="col">CPR</th>
-                        <th scope="col">Navn</th>
+                        <th scope="col" class="single-line">CPR</th>
+                        <th scope="col" class="single-line">Navn</th>
                         <th scope="col">Adresse</th>
-                        <th scope="col">Hjemmetelefon</th>
-                        <th scope="col">Mobiltelefon</th>
-                        <th scope="col">Arbejdstelefon</th>
+                        <th scope="col" class="single-line">Hjemmetelefon</th>
+                        <th scope="col" class="single-line">Mobiltelefon</th>
+                        <th scope="col" class="single-line">Arbejdstelefon</th>
                         <th v-for="key in additionalInfoKeys" :key="key" scope="col">{{ key }}</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr v-for="(patient, index) in patientRecords" :key="patient.id ?? index">
-                        <td>{{ patient.patientIdentifier?.identifier }}</td>
-                        <td>{{ patient.fullReversedName }}</td>
-                        <td>{{ formatAddress(patient.currentAddress) }}</td>
-                        <td>{{ patient.homePhoneNumber }}</td>
-                        <td>{{ patient.mobilePhoneNumber }}</td>
-                        <td>{{ patient.workPhoneNumber }}</td>
-                        <td v-for="key in additionalInfoKeys" :key="key">{{ patient.additionalInfo?.[key] }}</td>
+                        <td class="single-line">{{ patient.patientIdentifier?.identifier }}</td>
+                        <td><span class="name-text">{{ patient.fullReversedName }}</span></td>
+                        <td><span class="address-text">{{ formatAddress(patient.currentAddress) }}</span></td>
+                        <td class="single-line">{{ patient.homePhoneNumber }}</td>
+                        <td class="single-line">{{ patient.mobilePhoneNumber }}</td>
+                        <td class="single-line">{{ patient.workPhoneNumber }}</td>
+                        <td v-for="key in additionalInfoKeys" :key="key">
+                            <span class="clamped extra-text">{{ patient.additionalInfo?.[key] }}</span>
+                        </td>
                     </tr>
                 </tbody>
             </table>
@@ -265,8 +267,36 @@ onMounted(loadCitizenLists);
         vertical-align: top;
         overflow-wrap: anywhere;
     }
+    .patient-table th {
+        white-space: nowrap;
+        overflow-wrap: normal;
+    }
     .patient-table th:not(:last-child), .patient-table td:not(:last-child) {
         padding-right: 1rem;
+    }
+    .single-line {
+        white-space: nowrap;
+        overflow-wrap: normal;
+    }
+    .clamped {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        overflow-wrap: anywhere;
+    }
+    .name-text {
+        display: block;
+        width: 24rem;
+        overflow-wrap: anywhere;
+    }
+    .address-text {
+        display: block;
+        width: 30rem;
+        overflow-wrap: anywhere;
+    }
+    .extra-text {
+        max-width: 22rem;
+        -webkit-line-clamp: 2;
     }
     .pagination {
         display: flex;
