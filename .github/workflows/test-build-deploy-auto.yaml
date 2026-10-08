@@ -4,7 +4,7 @@ name: Test, build and deploy
 on:
   push:
     branches:
-      - '*'
+      - '**'
     tags:
       - 'v*.*.*'
 
@@ -43,7 +43,6 @@ jobs:
 
   build-and-publish:
     needs: test
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -78,7 +77,6 @@ jobs:
 
   deploy:
     needs: build-and-publish
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency:
       group: nexus-login-prod

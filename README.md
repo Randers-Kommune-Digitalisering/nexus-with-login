@@ -1,6 +1,6 @@
-# Vue-Python-Template
-Template for vue and python projects.
-NB: backend endpoints er åbne udtil (samme som frontend'en). Hvis der skal bruges en "rigtig" backend - deploy [vue](https://github.com/Randers-Kommune-Digitalisering/vue-js-template) og [flask](https://github.com/Randers-Kommune-Digitalisering/python-app-template) i hver sin pod.
+# Vue/Flask App brugerdefineret Nexus indhold
+App der håndterer log ind / brygerstyring til Nexus og viser brugerdefineret indhold + brugedefineret interaktion.
+
 
 ## Kørsel af frontend + backend i docker
 * Kør ```docker-compose up``` i top dir
@@ -11,7 +11,7 @@ NB: backend endpoints er åbne udtil (samme som frontend'en). Hvis der skal brug
 * Installerer afhængigheder: ``` npm install ```
 * Compile, hot reload og start frontenden: ``` npm run dev ```
 
-## Kørsel af Bakcenden(Python)
+## Kørsel af Backend (Python)
 * Start applikationen: ``` python flask/src/main.py ```
 
 ## Udviklings commands:

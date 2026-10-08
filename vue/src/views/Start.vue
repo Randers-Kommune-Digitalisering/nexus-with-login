@@ -49,7 +49,7 @@
 </script>
 
 <template>
-    <h2>Flask + Vue Template</h2>
+    <h2>Randers Nexus</h2>
 
     <Content>
         <div style="display: flex; justify-content: space-between; align-items: center;">
