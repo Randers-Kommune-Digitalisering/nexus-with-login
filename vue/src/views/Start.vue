@@ -55,7 +55,7 @@
 
     <Content>
         <div class="session-controls">
-            <p v-if="isLoggedIn" class="welcome">Logget ind<span v-if="userName"> som <strong>{{ userName }}</strong></span></p>
+            <p v-if="isLoggedIn" class="welcome"><span v-if="userName">Logget ind som <strong>{{ userName }}</strong></span></p>
             <button @click="loginLogout">
             {{ isLoggedIn ? 'Log ud' : 'Log ind' }}
             </button>

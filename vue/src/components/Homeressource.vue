@@ -83,22 +83,37 @@ const editNote = async (patient, note, rowIndex, noteIndex) => {
     const requestId = editRequest;
     editingNoteKey.value = `${rowIndex}:${noteIndex}`;
     editLoading.value = true;
+    let failureMessage = 'Kunne ikke hente sagsnotens formular.';
     try {
         const source = nexusLink(note.sourceHref, new URL('./', preferencesUrl));
         const formLink = nexusLink(note.referencedObjectHref, source.url);
         const formResponse = await fetch(formLink.proxy);
-        if (!formResponse.ok) throw new Error('Could not load form');
+        if (!formResponse.ok) {
+            failureMessage = `Kunne ikke hente sagsnotens formular (HTTP ${formResponse.status}).`;
+            throw new Error(failureMessage);
+        }
         const form = await formResponse.json();
         const items = form?.formDefinition?.items;
         const subjectItem = Array.isArray(items) && items.find(item => item.label === 'Emne:');
         const textItem = Array.isArray(items) && items.find(item => item.label === 'Tekst:');
+        failureMessage = 'Formularen mangler Emne: eller Tekst:.';
         if (!subjectItem || !textItem) throw new Error('Missing note fields');
 
+        failureMessage = 'Formularens availableActions-link mangler eller er ugyldigt.';
         const actionsLink = nexusLink(form.formDefinition._links?.availableActions?.href, formLink.url);
+        failureMessage = 'Kunne ikke hente formularens handlinger.';
         const actionsResponse = await fetch(actionsLink.proxy);
-        if (!actionsResponse.ok) throw new Error('Could not load actions');
+        if (!actionsResponse.ok) {
+            failureMessage = `Kunne ikke hente formularens handlinger (HTTP ${actionsResponse.status}).`;
+            throw new Error(failureMessage);
+        }
         const actions = await actionsResponse.json();
-        const completedAction = Array.isArray(actions) && actions.find(action => action.name === 'Udfyldt');
+        failureMessage = 'Handlingssvaret er ikke en liste.';
+        if (!Array.isArray(actions)) throw new Error('Unexpected actions response');
+        failureMessage = 'Handlingen Udfyldt blev ikke fundet.';
+        const completedAction = actions.find(action => action?.name === 'Udfyldt');
+        if (!completedAction) throw new Error('Missing completed action');
+        failureMessage = 'Udfyldt mangler et gyldigt updateFormData-link.';
         const updateLink = nexusLink(completedAction?._links?.updateFormData?.href, actionsLink.url);
         if (requestId !== editRequest) return;
 
@@ -110,7 +125,7 @@ const editNote = async (patient, note, rowIndex, noteIndex) => {
             originalSubject: subject, originalText: text, subject, text,
         };
     } catch {
-        if (requestId === editRequest) editError.value = 'Kunne ikke åbne sagsnoten.';
+        if (requestId === editRequest) editError.value = failureMessage;
     } finally {
         if (requestId === editRequest) editLoading.value = false;
     }
