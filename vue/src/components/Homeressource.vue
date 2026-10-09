@@ -18,10 +18,12 @@ const editState = ref(null);
 const editLoading = ref(false);
 const editSaving = ref(false);
 const editError = ref('');
-const editChanged = computed(() => editState.value && (
-    editState.value.subject !== editState.value.originalSubject
-    || editState.value.text !== editState.value.originalText
-));
+const editChanged = computed(() => {
+    const state = editState.value;
+    if (!state) return false;
+    if (state.mode === 'create') return Boolean(state.subject.trim() && state.text.trim());
+    return state.subject !== state.originalSubject || state.text !== state.originalText;
+});
 const selectedList = computed(() => citizenLists.value.find(list => list.id === selectedId.value));
 const additionalInfoKeys = computed(() => [...new Set(
     patientRecords.value.flatMap(patient => Object.keys(patient.additionalInfo ?? {}).filter(key => key.toLowerCase() !== 'tekst'))
@@ -75,6 +77,38 @@ const toggleRow = (index) => {
     if (editSaving.value) return;
     cancelEdit();
     expandedRowIndex.value = expandedRowIndex.value === index ? null : index;
+};
+
+const addNote = async (patient, rowIndex) => {
+    if (editSaving.value) return;
+    cancelEdit();
+    const requestId = editRequest;
+    editingNoteKey.value = `${rowIndex}:new`;
+    editLoading.value = true;
+    try {
+        const patientId = String(patient?.id ?? '');
+        if (!/^\d+$/.test(patientId)) throw new Error('Invalid patient ID');
+        const prototypeLink = nexusLink(
+            `patients/${patientId}/forms/prototype?formDefinitionId=807&programPathwayId=1&placement=PATHWAY`,
+            new URL('./', preferencesUrl),
+        );
+        const response = await fetch(prototypeLink.proxy);
+        if (!response.ok) throw new Error('Could not load prototype');
+        const prototype = await response.json();
+        const items = prototype?.items;
+        const subject = Array.isArray(items) && items.find(item => item?.label === 'Emne:');
+        const text = Array.isArray(items) && items.find(item => item?.label === 'Tekst:');
+        if (!subject || !text) throw new Error('Missing note fields');
+        if (requestId !== editRequest) return;
+        editState.value = {
+            mode: 'create', form: prototype, patient, prototypeUrl: prototypeLink.url,
+            subject: String(subject.value ?? ''), text: String(text.value ?? ''),
+        };
+    } catch {
+        if (requestId === editRequest) editError.value = 'Kunne ikke oprette sagsnotatet.';
+    } finally {
+        if (requestId === editRequest) editLoading.value = false;
+    }
 };
 
 const editNote = async (patient, note, rowIndex, noteIndex) => {
@@ -140,20 +174,45 @@ const saveNote = async () => {
     editSaving.value = true;
     editError.value = '';
     try {
+        let updateProxy = state.updateProxy;
+        if (state.mode === 'create') {
+            const actionsLink = nexusLink(payload._links?.availableActions?.href, state.prototypeUrl);
+            const actionsResponse = await fetch(actionsLink.proxy);
+            if (!actionsResponse.ok) throw new Error('Could not load actions');
+            const actions = await actionsResponse.json();
+            const completedAction = Array.isArray(actions) && actions.find(action => action?.name === 'Udfyldt');
+            updateProxy = nexusLink(completedAction?._links?.updateFormData?.href, actionsLink.url).proxy;
+        }
         const csrfResponse = await fetch('/api/csrf');
         if (!csrfResponse.ok) throw new Error('Could not get CSRF token');
         const { token } = await csrfResponse.json();
         if (typeof token !== 'string' || !token) throw new Error('Missing CSRF token');
-        const response = await fetch(state.updateProxy, {
-            method: 'PUT',
+        const response = await fetch(updateProxy, {
+            method: state.mode === 'create' ? 'POST' : 'PUT',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRF-Token': token,
-                ...(state.etag ? { 'If-Match': state.etag } : {}),
+                ...(state.mode !== 'create' && state.etag ? { 'If-Match': state.etag } : {}),
             },
             body: JSON.stringify(payload),
         });
         if (!response.ok) throw new Error('Could not update note');
+        if (state.mode === 'create') {
+            const existingCount = state.patient.notes.length;
+            const refreshed = await additionalInfoForPatient(state.patient);
+            if (refreshed.notes.length > existingCount && refreshed.notes.some(note =>
+                note.subject === state.subject && note.text === state.text)) {
+                Object.assign(state.patient, refreshed);
+                cancelEdit();
+                return;
+            }
+            const date = Date.now();
+            state.patient.notes.unshift({ subject: state.subject, text: state.text, date });
+            state.patient.referenceDate = date;
+            state.patient.additionalInfo.Emne = state.subject;
+            cancelEdit();
+            return;
+        }
         state.note.subject = state.subject;
         state.note.text = state.text;
         if (state.note.date === state.patient.referenceDate) {
@@ -334,7 +393,7 @@ onMounted(loadCitizenLists);
 
 <template>
     <div class="citizen-list">
-        <label for="citizen-list-select">Borgerliste</label>
+        <label for="citizen-list-select">Borgere</label>
         <div class="controls">
             <select id="citizen-list-select" v-model="selectedId" :disabled="loading || editSaving" @change="fetchSelected">
                 <option value="">Vælg en liste</option>
@@ -363,7 +422,7 @@ onMounted(loadCitizenLists);
                 </thead>
                 <tbody>
                     <template v-for="(patient, index) in patientRecords" :key="patient.id ?? index">
-                    <tr>
+                    <tr class="patient-row" :class="{ expanded: expandedRowIndex === index }" @click="toggleRow(index)">
                         <td class="single-line">{{ patient.patientIdentifier?.identifier }}</td>
                         <td><span class="name-text">{{ patient.fullReversedName }}</span></td>
                         <td><span class="address-text">{{ formatAddress(patient.currentAddress) }}</span></td>
@@ -377,7 +436,7 @@ onMounted(loadCitizenLists);
                         <td class="row-action">
                             <button type="button" class="icon-button" :disabled="editSaving" :aria-expanded="expandedRowIndex === index"
                                 :aria-controls="`patient-notes-${index}`" :aria-label="`${expandedRowIndex === index ? 'Skjul' : 'Vis'} sagsnoter for ${patient.fullReversedName}`"
-                                @click="toggleRow(index)">
+                                @click.stop="toggleRow(index)">
                                 <ChevronUp v-if="expandedRowIndex === index" aria-hidden="true" />
                                 <ChevronDown v-else aria-hidden="true" />
                             </button>
@@ -385,11 +444,14 @@ onMounted(loadCitizenLists);
                     </tr>
                     <tr v-if="expandedRowIndex === index" :id="`patient-notes-${index}`" class="notes-row">
                         <td :colspan="8 + additionalInfoKeys.length">
-                            <div class="notes-panel">
-                                <button type="button" class="add-note" disabled aria-label="Tilføj sagsnote (ikke klar endnu)">
-                                    <Plus aria-hidden="true" /> Tilføj sagsnote
-                                </button>
-                                <table v-if="patient.notes?.length" class="notes-table">
+                            <div class="notes-panel card randers">
+                                <div class="header notes-header">
+                                    <button type="button" class="add-note" :disabled="editSaving || editingNoteKey === `${index}:new`" @click="addNote(patient, index)">
+                                        <Plus aria-hidden="true" /> Tilføj sagsnotat
+                                    </button>
+                                </div>
+                                <div class="card-body notes-body">
+                                <table v-if="patient.notes?.length || editingNoteKey === `${index}:new`" class="notes-table">
                                     <thead>
                                         <tr>
                                             <th scope="col">Emne</th>
@@ -399,8 +461,25 @@ onMounted(loadCitizenLists);
                                         </tr>
                                     </thead>
                                     <tbody>
+                                        <tr v-if="editingNoteKey === `${index}:new`" class="note-editor-row">
+                                            <td colspan="4">
+                                                <p v-if="editLoading" role="status">Henter sagsnotat…</p>
+                                                <form v-else-if="editState" class="note-editor" @submit.prevent="saveNote">
+                                                    <label :for="`new-note-subject-${index}`">Emne</label>
+                                                    <input :id="`new-note-subject-${index}`" v-model="editState.subject" type="text" required>
+                                                    <label :for="`new-note-text-${index}`">Tekst</label>
+                                                    <textarea :id="`new-note-text-${index}`" v-model="editState.text" required></textarea>
+                                                    <div class="note-editor-actions">
+                                                        <button type="submit" :disabled="!editChanged || editSaving">{{ editSaving ? 'Gemmer…' : 'Gem' }}</button>
+                                                        <button type="button" :disabled="editSaving" @click="cancelEdit">Annuller</button>
+                                                    </div>
+                                                </form>
+                                                <p v-if="editError" role="alert">{{ editError }}</p>
+                                                <button v-if="!editState && !editSaving" type="button" @click="cancelEdit">Annuller</button>
+                                            </td>
+                                        </tr>
                                         <template v-for="(note, noteIndex) in patient.notes" :key="noteIndex">
-                                        <tr>
+                                        <tr :class="{ editing: editingNoteKey === `${index}:${noteIndex}` }">
                                             <td>{{ note.subject }}</td>
                                             <td class="note-text">{{ note.text }}</td>
                                             <td class="single-line">{{ formatTime(note.date) }}</td>
@@ -432,6 +511,7 @@ onMounted(loadCitizenLists);
                                     </tbody>
                                 </table>
                                 <p v-else>Ingen sagsnoter fundet.</p>
+                                </div>
                             </div>
                         </td>
                     </tr>
@@ -492,6 +572,15 @@ onMounted(loadCitizenLists);
     .patient-table th:not(:last-child), .patient-table td:not(:last-child) {
         padding-right: 0.5rem;
     }
+    .patient-row {
+        cursor: pointer;
+    }
+    .patient-row.expanded {
+        font-weight: 700;
+    }
+    .patient-row:has(.icon-button:disabled) {
+        cursor: default;
+    }
     .single-line {
         white-space: nowrap;
         overflow-wrap: normal;
@@ -517,9 +606,13 @@ onMounted(loadCitizenLists);
         -webkit-line-clamp: 2;
     }
     .row-action {
-        width: 4rem;
+        width: 5rem;
+        padding-right: 1.5rem !important;
         text-align: right !important;
         white-space: nowrap;
+    }
+    .notes-table .row-action {
+        padding-right: 2rem !important;
     }
     .icon-button {
         display: inline-flex;
@@ -533,7 +626,7 @@ onMounted(loadCitizenLists);
         background: transparent;
         color: var(--color-text);
     }
-    .icon-button:disabled, .add-note:disabled {
+    .icon-button:disabled {
         background: transparent !important;
         color: var(--color-text);
         opacity: 0.55;
@@ -553,21 +646,30 @@ onMounted(loadCitizenLists);
     }
     .notes-row > td {
         padding: 1rem;
-        background: var(--color-bg);
+        background: var(--color-bg-light);
     }
-    .notes-panel {
+    .notes-panel.card {
         contain: inline-size;
+        width: 100%;
         max-width: 100%;
+        overflow: hidden;
+        background: var(--color-bg-light);
+    }
+    .notes-header .add-note {
+        margin: 0;
+    }
+    .notes-body {
+        background: var(--color-bg-light);
     }
     .add-note {
         display: inline-flex;
         align-items: center;
         gap: 0.5rem;
-        margin-bottom: 1rem;
     }
     .notes-table {
         width: 100%;
         table-layout: fixed;
+        margin: 0;
     }
     .notes-table th:nth-child(1) {
         width: 16rem;
@@ -576,7 +678,10 @@ onMounted(loadCitizenLists);
         width: 14rem;
     }
     .notes-table th:nth-child(4) {
-        width: 4rem;
+        width: 5.5rem;
+    }
+    .notes-table tbody tr.editing {
+        font-weight: 700;
     }
     .note-text {
         white-space: pre-wrap;
@@ -600,6 +705,7 @@ onMounted(loadCitizenLists);
     }
     .note-editor-actions {
         display: flex;
+        justify-content: flex-end;
         gap: 0.5rem;
     }
     .note-editor-actions button {
