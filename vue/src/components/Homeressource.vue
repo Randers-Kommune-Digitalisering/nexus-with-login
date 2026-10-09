@@ -89,7 +89,7 @@ const addNote = async (patient, rowIndex) => {
         const patientId = String(patient?.id ?? '');
         if (!/^\d+$/.test(patientId)) throw new Error('Invalid patient ID');
         const prototypeLink = nexusLink(
-            `patients/${patientId}/forms/prototype?formDefinitionId=807&programPathwayId=263598&placement=PATHWAY`,
+            `patients/${patientId}/forms/prototype?formDefinitionId=807&programPathwayId=263606&placement=PATHWAY`,
             new URL('./', preferencesUrl),
         );
         const response = await fetch(prototypeLink.proxy);
