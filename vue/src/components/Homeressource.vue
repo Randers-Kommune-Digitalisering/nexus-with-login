@@ -173,20 +173,39 @@ const saveNote = async () => {
     payload.items.find(item => item.label === 'Tekst:').value = state.text;
     editSaving.value = true;
     editError.value = '';
+    let failureMessage = 'Kunne ikke gemme sagsnoten. Prøv igen.';
     try {
         let updateProxy = state.updateProxy;
         if (state.mode === 'create') {
+            failureMessage = 'Formularens availableActions-link mangler eller er ugyldigt.';
             const actionsLink = nexusLink(payload._links?.availableActions?.href, state.prototypeUrl);
+            failureMessage = 'Kunne ikke hente formularens handlinger.';
             const actionsResponse = await fetch(actionsLink.proxy);
-            if (!actionsResponse.ok) throw new Error('Could not load actions');
+            if (!actionsResponse.ok) {
+                failureMessage = `Kunne ikke hente formularens handlinger (HTTP ${actionsResponse.status}).`;
+                throw new Error('Could not load actions');
+            }
             const actions = await actionsResponse.json();
+            failureMessage = 'Handlingen Udfyldt blev ikke fundet.';
             const completedAction = Array.isArray(actions) && actions.find(action => action?.name === 'Udfyldt');
-            updateProxy = nexusLink(completedAction?._links?.updateFormData?.href, actionsLink.url).proxy;
+            if (!completedAction) throw new Error('Missing completed action');
+            failureMessage = 'Udfyldt mangler et gyldigt handlings-id.';
+            const actionId = String(completedAction.id ?? '');
+            if (!/^\d+$/.test(actionId)) throw new Error('Invalid action ID');
+            const patientId = String(state.patient?.id ?? '');
+            if (!/^\d+$/.test(patientId)) throw new Error('Invalid patient ID');
+            updateProxy = nexusLink(`patients/${patientId}/forms?actionId=${actionId}`,
+                new URL('./', preferencesUrl)).proxy;
         }
+        failureMessage = 'Kunne ikke hente sikkerhedstoken.';
         const csrfResponse = await fetch('/api/csrf');
-        if (!csrfResponse.ok) throw new Error('Could not get CSRF token');
+        if (!csrfResponse.ok) {
+            failureMessage = `Kunne ikke hente sikkerhedstoken (HTTP ${csrfResponse.status}).`;
+            throw new Error('Could not get CSRF token');
+        }
         const { token } = await csrfResponse.json();
         if (typeof token !== 'string' || !token) throw new Error('Missing CSRF token');
+        failureMessage = 'Kunne ikke gemme sagsnoten. Prøv igen.';
         const response = await fetch(updateProxy, {
             method: state.mode === 'create' ? 'POST' : 'PUT',
             headers: {
@@ -221,7 +240,7 @@ const saveNote = async () => {
         }
         cancelEdit();
     } catch {
-        editError.value = 'Kunne ikke gemme sagsnoten. Prøv igen.';
+        editError.value = failureMessage;
     } finally {
         editSaving.value = false;
     }
