@@ -93,14 +93,14 @@ const editNote = async (patient, note, rowIndex, noteIndex) => {
             throw new Error(failureMessage);
         }
         const form = await formResponse.json();
-        const items = form?.formDefinition?.items;
+        const items = form?.items;
         const subjectItem = Array.isArray(items) && items.find(item => item.label === 'Emne:');
         const textItem = Array.isArray(items) && items.find(item => item.label === 'Tekst:');
         failureMessage = 'Formularen mangler Emne: eller Tekst:.';
         if (!subjectItem || !textItem) throw new Error('Missing note fields');
 
         failureMessage = 'Formularens availableActions-link mangler eller er ugyldigt.';
-        const actionsLink = nexusLink(form.formDefinition._links?.availableActions?.href, formLink.url);
+        const actionsLink = nexusLink(form._links?.availableActions?.href, formLink.url);
         failureMessage = 'Kunne ikke hente formularens handlinger.';
         const actionsResponse = await fetch(actionsLink.proxy);
         if (!actionsResponse.ok) {
@@ -135,8 +135,8 @@ const saveNote = async () => {
     if (!editState.value || !editChanged.value || editSaving.value) return;
     const state = editState.value;
     const payload = structuredClone(toRaw(state.form));
-    payload.formDefinition.items.find(item => item.label === 'Emne:').value = state.subject;
-    payload.formDefinition.items.find(item => item.label === 'Tekst:').value = state.text;
+    payload.items.find(item => item.label === 'Emne:').value = state.subject;
+    payload.items.find(item => item.label === 'Tekst:').value = state.text;
     editSaving.value = true;
     editError.value = '';
     try {
