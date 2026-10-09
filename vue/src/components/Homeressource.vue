@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, toRaw } from 'vue';
+import { ChevronDown, ChevronUp, Pencil, Plus } from '@lucide/vue';
 
 const props = defineProps({ homeResource: { type: Object, required: true } });
 const citizenLists = ref([]);
@@ -11,6 +12,16 @@ const totalItems = ref(0);
 const error = ref('');
 const loading = ref(true);
 const fetching = ref(false);
+const expandedRowIndex = ref(null);
+const editingNoteKey = ref(null);
+const editState = ref(null);
+const editLoading = ref(false);
+const editSaving = ref(false);
+const editError = ref('');
+const editChanged = computed(() => editState.value && (
+    editState.value.subject !== editState.value.originalSubject
+    || editState.value.text !== editState.value.originalText
+));
 const selectedList = computed(() => citizenLists.value.find(list => list.id === selectedId.value));
 const additionalInfoKeys = computed(() => [...new Set(
     patientRecords.value.flatMap(patient => Object.keys(patient.additionalInfo ?? {}).filter(key => key.toLowerCase() !== 'tekst'))
@@ -39,26 +50,141 @@ const formatTime = (timestamp) => {
 let preferencesUrl;
 let contentUrl;
 let selectionRequest = 0;
+let editRequest = 0;
+
+const nexusLink = (href, base) => {
+    if (typeof href !== 'string' || !href) throw new Error('Missing Nexus link');
+    const target = new URL(href, base);
+    const apiPrefix = preferencesUrl.pathname.slice(0, -'preferences'.length);
+    if (target.protocol !== 'https:' || target.origin !== preferencesUrl.origin
+        || !target.pathname.startsWith(apiPrefix) || target.hash) {
+        throw new Error('Invalid Nexus link');
+    }
+    return { url: target, proxy: `/api/nexus/${target.pathname.slice(apiPrefix.length)}${target.search}` };
+};
+
+const cancelEdit = () => {
+    ++editRequest;
+    editingNoteKey.value = null;
+    editState.value = null;
+    editLoading.value = false;
+    editError.value = '';
+};
+
+const toggleRow = (index) => {
+    if (editSaving.value) return;
+    cancelEdit();
+    expandedRowIndex.value = expandedRowIndex.value === index ? null : index;
+};
+
+const editNote = async (patient, note, rowIndex, noteIndex) => {
+    if (!note.referencedObjectHref || editSaving.value) return;
+    cancelEdit();
+    const requestId = editRequest;
+    editingNoteKey.value = `${rowIndex}:${noteIndex}`;
+    editLoading.value = true;
+    try {
+        const source = nexusLink(note.sourceHref, new URL('./', preferencesUrl));
+        const formLink = nexusLink(note.referencedObjectHref, source.url);
+        const formResponse = await fetch(formLink.proxy);
+        if (!formResponse.ok) throw new Error('Could not load form');
+        const form = await formResponse.json();
+        const items = form?.formDefinition?.items;
+        const subjectItem = Array.isArray(items) && items.find(item => item.label === 'Emne:');
+        const textItem = Array.isArray(items) && items.find(item => item.label === 'Tekst:');
+        if (!subjectItem || !textItem) throw new Error('Missing note fields');
+
+        const actionsLink = nexusLink(form.formDefinition._links?.availableActions?.href, formLink.url);
+        const actionsResponse = await fetch(actionsLink.proxy);
+        if (!actionsResponse.ok) throw new Error('Could not load actions');
+        const actions = await actionsResponse.json();
+        const completedAction = Array.isArray(actions) && actions.find(action => action.name === 'Udfyldt');
+        const updateLink = nexusLink(completedAction?._links?.updateFormData?.href, actionsLink.url);
+        if (requestId !== editRequest) return;
+
+        const subject = String(subjectItem.value ?? '');
+        const text = String(textItem.value ?? '');
+        editState.value = {
+            form, patient, note, updateProxy: updateLink.proxy,
+            etag: formResponse.headers.get('ETag'),
+            originalSubject: subject, originalText: text, subject, text,
+        };
+    } catch {
+        if (requestId === editRequest) editError.value = 'Kunne ikke åbne sagsnoten.';
+    } finally {
+        if (requestId === editRequest) editLoading.value = false;
+    }
+};
+
+const saveNote = async () => {
+    if (!editState.value || !editChanged.value || editSaving.value) return;
+    const state = editState.value;
+    const payload = structuredClone(toRaw(state.form));
+    payload.formDefinition.items.find(item => item.label === 'Emne:').value = state.subject;
+    payload.formDefinition.items.find(item => item.label === 'Tekst:').value = state.text;
+    editSaving.value = true;
+    editError.value = '';
+    try {
+        const csrfResponse = await fetch('/api/csrf');
+        if (!csrfResponse.ok) throw new Error('Could not get CSRF token');
+        const { token } = await csrfResponse.json();
+        if (typeof token !== 'string' || !token) throw new Error('Missing CSRF token');
+        const response = await fetch(state.updateProxy, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': token,
+                ...(state.etag ? { 'If-Match': state.etag } : {}),
+            },
+            body: JSON.stringify(payload),
+        });
+        if (!response.ok) throw new Error('Could not update note');
+        state.note.subject = state.subject;
+        state.note.text = state.text;
+        if (state.note.date === state.patient.referenceDate) {
+            const subjectKey = Object.keys(state.patient.additionalInfo).find(key => key.toLowerCase() === 'emne') ?? 'Emne';
+            state.patient.additionalInfo[subjectKey] = state.subject;
+        }
+        cancelEdit();
+    } catch {
+        editError.value = 'Kunne ikke gemme sagsnoten. Prøv igen.';
+    } finally {
+        editSaving.value = false;
+    }
+};
 
 const additionalInfoForPatient = async (patient) => {
     const patientId = String(patient?.id ?? '');
-    if (!/^\d+$/.test(patientId)) return { additionalInfo: {}, referenceDate: null };
+    if (!/^\d+$/.test(patientId)) return { additionalInfo: {}, referenceDate: null, notes: [] };
     const url = `/api/nexus/patients/${patientId}/pathways/flatReferences?filterId=749`;
     try {
         const response = await fetch(url);
-        if (!response.ok) return { additionalInfo: {}, referenceDate: null };
+        if (!response.ok) return { additionalInfo: {}, referenceDate: null, notes: [] };
         const references = await response.json();
-        if (!Array.isArray(references)) return { additionalInfo: {}, referenceDate: null };
+        if (!Array.isArray(references)) return { additionalInfo: {}, referenceDate: null, notes: [] };
+        const sourceUrl = new URL(`patients/${patientId}/pathways/flatReferences?filterId=749`, new URL('./', preferencesUrl));
+        const notes = references.map(entry => {
+            const parsedDate = Date.parse(String(entry?.date ?? '').replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
+            const fields = Object.fromEntries((Array.isArray(entry?.additionalInfo) ? entry.additionalInfo : [])
+                .filter(item => item?.type === 'keyValue' && typeof item.key === 'string' && item.key.trim())
+                .map(({ key, value }) => [key.trim().replace(/:+$/, '').toLowerCase(), value ?? '']));
+            return {
+                subject: fields.emne ?? '', text: fields.tekst ?? '',
+                date: Number.isFinite(parsedDate) ? parsedDate : null,
+                referencedObjectHref: entry?._links?.referencedObject?.href,
+                sourceHref: new URL(entry?._links?.self?.href ?? sourceUrl.href, sourceUrl).href,
+            };
+        }).sort((first, second) => (second.date ?? -Infinity) - (first.date ?? -Infinity));
         const latest = references.reduce((newest, entry) => {
             const date = Date.parse(String(entry?.date ?? '').replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
             return Number.isFinite(date) && (!newest || date > newest.date) ? { entry, date } : newest;
         }, null);
-        if (!Array.isArray(latest?.entry?.additionalInfo)) return { additionalInfo: {}, referenceDate: latest?.date ?? null };
+        if (!Array.isArray(latest?.entry?.additionalInfo)) return { additionalInfo: {}, referenceDate: latest?.date ?? null, notes };
         return { referenceDate: latest.date, additionalInfo: Object.fromEntries(latest.entry.additionalInfo
             .filter(item => item?.type === 'keyValue' && typeof item.key === 'string' && item.key.trim())
-            .map(({ key, value }) => [key.trim().replace(/:+$/, ''), value ?? ''])) };
+            .map(({ key, value }) => [key.trim().replace(/:+$/, ''), value ?? ''])), notes };
     } catch {
-        return { additionalInfo: {}, referenceDate: null };
+        return { additionalInfo: {}, referenceDate: null, notes: [] };
     }
 };
 
@@ -92,7 +218,9 @@ const loadCitizenLists = async () => {
 
 const fetchPatientPage = async (pageIndex) => {
     const requestId = ++selectionRequest;
+    cancelEdit();
     patientRecords.value = [];
+    expandedRowIndex.value = null;
     error.value = '';
     fetching.value = true;
     try {
@@ -130,7 +258,9 @@ const fetchPatientPage = async (pageIndex) => {
 const fetchSelected = async () => {
     const selected = selectedList.value;
     const requestId = ++selectionRequest;
+    cancelEdit();
     patientRecords.value = [];
+    expandedRowIndex.value = null;
     pages.value = [];
     totalItems.value = 0;
     currentPageIndex.value = 0;
@@ -191,7 +321,7 @@ onMounted(loadCitizenLists);
     <div class="citizen-list">
         <label for="citizen-list-select">Borgerliste</label>
         <div class="controls">
-            <select id="citizen-list-select" v-model="selectedId" :disabled="loading" @change="fetchSelected">
+            <select id="citizen-list-select" v-model="selectedId" :disabled="loading || editSaving" @change="fetchSelected">
                 <option value="">Vælg en liste</option>
                 <option v-for="list in citizenLists" :key="list.id" :value="list.id">{{ list.name }}</option>
             </select>
@@ -213,10 +343,12 @@ onMounted(loadCitizenLists);
                         <th scope="col" class="single-line">Arbejdstelefon</th>
                         <th v-for="key in additionalInfoKeys" :key="key" scope="col">{{ key }}</th>
                         <th scope="col" class="single-line">Tid</th>
+                        <th scope="col" class="row-action"><span class="visually-hidden">Sagsnoter</span></th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="(patient, index) in patientRecords" :key="patient.id ?? index">
+                    <template v-for="(patient, index) in patientRecords" :key="patient.id ?? index">
+                    <tr>
                         <td class="single-line">{{ patient.patientIdentifier?.identifier }}</td>
                         <td><span class="name-text">{{ patient.fullReversedName }}</span></td>
                         <td><span class="address-text">{{ formatAddress(patient.currentAddress) }}</span></td>
@@ -227,21 +359,82 @@ onMounted(loadCitizenLists);
                             <span class="clamped extra-text">{{ patient.additionalInfo?.[key] }}</span>
                         </td>
                         <td class="single-line">{{ formatTime(patient.referenceDate) }}</td>
+                        <td class="row-action">
+                            <button type="button" class="icon-button" :disabled="editSaving" :aria-expanded="expandedRowIndex === index"
+                                :aria-controls="`patient-notes-${index}`" :aria-label="`${expandedRowIndex === index ? 'Skjul' : 'Vis'} sagsnoter for ${patient.fullReversedName}`"
+                                @click="toggleRow(index)">
+                                <ChevronUp v-if="expandedRowIndex === index" aria-hidden="true" />
+                                <ChevronDown v-else aria-hidden="true" />
+                            </button>
+                        </td>
                     </tr>
+                    <tr v-if="expandedRowIndex === index" :id="`patient-notes-${index}`" class="notes-row">
+                        <td :colspan="8 + additionalInfoKeys.length">
+                            <div class="notes-panel">
+                                <button type="button" class="add-note" disabled aria-label="Tilføj sagsnote (ikke klar endnu)">
+                                    <Plus aria-hidden="true" /> Tilføj sagsnote
+                                </button>
+                                <table v-if="patient.notes?.length" class="notes-table">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Emne</th>
+                                            <th scope="col">Tekst</th>
+                                            <th scope="col">Tid</th>
+                                            <th scope="col"><span class="visually-hidden">Rediger</span></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template v-for="(note, noteIndex) in patient.notes" :key="noteIndex">
+                                        <tr>
+                                            <td>{{ note.subject }}</td>
+                                            <td class="note-text">{{ note.text }}</td>
+                                            <td class="single-line">{{ formatTime(note.date) }}</td>
+                                            <td class="row-action">
+                                                <button type="button" class="icon-button" :disabled="!note.referencedObjectHref || editSaving"
+                                                    aria-label="Rediger sagsnote" title="Rediger sagsnote"
+                                                    @click="editNote(patient, note, index, noteIndex)">
+                                                    <Pencil aria-hidden="true" />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        <tr v-if="editingNoteKey === `${index}:${noteIndex}`" class="note-editor-row">
+                                            <td colspan="4">
+                                                <p v-if="editLoading" role="status">Henter sagsnote…</p>
+                                                <form v-else-if="editState" class="note-editor" @submit.prevent="saveNote">
+                                                    <label :for="`note-subject-${index}-${noteIndex}`">Emne</label>
+                                                    <input :id="`note-subject-${index}-${noteIndex}`" v-model="editState.subject" type="text">
+                                                    <label :for="`note-text-${index}-${noteIndex}`">Tekst</label>
+                                                    <textarea :id="`note-text-${index}-${noteIndex}`" v-model="editState.text"></textarea>
+                                                    <div class="note-editor-actions">
+                                                        <button type="submit" :disabled="!editChanged || editSaving">{{ editSaving ? 'Gemmer…' : 'Gem' }}</button>
+                                                        <button type="button" :disabled="editSaving" @click="cancelEdit">Annuller</button>
+                                                    </div>
+                                                </form>
+                                                <p v-if="editError" role="alert">{{ editError }}</p>
+                                            </td>
+                                        </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                                <p v-else>Ingen sagsnoter fundet.</p>
+                            </div>
+                        </td>
+                    </tr>
+                    </template>
                 </tbody>
             </table>
         </div>
         <nav v-if="pages.length > 1" class="pagination" aria-label="Borgerliste sider">
-            <button type="button" :disabled="fetching || currentPageIndex === 0"
-                :class="{ disabled: fetching || currentPageIndex === 0 }"
+            <button type="button" :disabled="fetching || editSaving || currentPageIndex === 0"
+                :class="{ disabled: fetching || editSaving || currentPageIndex === 0 }"
                 aria-label="Forrige side" @click="fetchPatientPage(currentPageIndex - 1)">&lt;</button>
             <button v-for="pageIndex in visiblePages" :key="pageIndex" type="button"
-                :class="{ selected: currentPageIndex === pageIndex, disabled: fetching }"
-                :disabled="fetching || currentPageIndex === pageIndex"
+                :class="{ selected: currentPageIndex === pageIndex, disabled: fetching || editSaving }"
+                :disabled="fetching || editSaving || currentPageIndex === pageIndex"
                 :aria-current="currentPageIndex === pageIndex ? 'page' : undefined"
                 @click="fetchPatientPage(pageIndex)">{{ pageIndex + 1 }}</button>
-            <button type="button" :disabled="fetching || currentPageIndex === pages.length - 1"
-                :class="{ disabled: fetching || currentPageIndex === pages.length - 1 }"
+            <button type="button" :disabled="fetching || editSaving || currentPageIndex === pages.length - 1"
+                :class="{ disabled: fetching || editSaving || currentPageIndex === pages.length - 1 }"
                 aria-label="Næste side" @click="fetchPatientPage(currentPageIndex + 1)">&gt;</button>
         </nav>
         <p v-if="pages.length > 1" class="page-summary">{{ totalItems }} borgere</p>
@@ -268,8 +461,8 @@ onMounted(loadCitizenLists);
         overflow-x: auto;
     }
     .patient-table {
-        width: 100%;
-        min-width: 78rem;
+        width: max-content;
+        min-width: 100%;
         border-collapse: collapse;
     }
     .patient-table th, .patient-table td {
@@ -307,6 +500,95 @@ onMounted(loadCitizenLists);
     .extra-text {
         max-width: 22rem;
         -webkit-line-clamp: 2;
+    }
+    .row-action {
+        width: 4rem;
+        text-align: right !important;
+        white-space: nowrap;
+    }
+    .icon-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 3rem;
+        height: 3rem;
+        padding: 0;
+        margin: 0;
+        border: 0;
+        background: transparent;
+        color: var(--color-text);
+    }
+    .icon-button:disabled, .add-note:disabled {
+        background: transparent !important;
+        color: var(--color-text);
+        opacity: 0.55;
+    }
+    .icon-button svg, .add-note svg {
+        width: 1.7rem;
+        height: 1.7rem;
+    }
+    .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+    }
+    .notes-row > td {
+        padding: 1rem;
+        background: var(--color-bg);
+    }
+    .notes-panel {
+        contain: inline-size;
+        max-width: 100%;
+    }
+    .add-note {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    .notes-table {
+        width: 100%;
+        table-layout: fixed;
+    }
+    .notes-table th:nth-child(1) {
+        width: 16rem;
+    }
+    .notes-table th:nth-child(3) {
+        width: 14rem;
+    }
+    .notes-table th:nth-child(4) {
+        width: 4rem;
+    }
+    .note-text {
+        white-space: pre-wrap;
+    }
+    .note-editor-row > td {
+        padding: 1rem 0;
+    }
+    .note-editor label {
+        display: block;
+        margin-bottom: 0.4rem;
+    }
+    .note-editor input {
+        display: block;
+        width: min(100%, 32rem);
+    }
+    .note-editor textarea {
+        display: block;
+        width: 100%;
+        min-height: 10rem;
+        resize: vertical;
+    }
+    .note-editor-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+    .note-editor-actions button {
+        margin: 0;
     }
     .pagination {
         display: flex;
