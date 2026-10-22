@@ -15,7 +15,9 @@
 
     <div class="header">
 
-        <img class="randers-logo" :src="randersLogo" alt="Randers Kommune">
+        <div class="menu-brand">
+            <img class="randers-logo" :src="randersLogo" alt="Randers Kommune">
+        </div>
         
         <router-link to="/" active-class="selected">
             <span>Borgere</span>
@@ -35,10 +37,12 @@
 <style scoped>
 /* Mobile first */
 /* 1 rem = 10 px, except when defining @media rules, then 1 rem = 16 px */
-.randers-logo
+.menu-brand
 {
     flex: none;
     width: 12rem;
+    display: flex;
+    justify-content: center;
 }
 
 /* Is top header */
@@ -138,12 +142,20 @@
         height: 100vh;
 
         border-bottom: 0rem;
+        overflow: visible;
     }
-        .randers-logo
+        .menu-brand
         {
             align-self: center;
-            width: calc(100% - 0.8rem);
-            transform: translate(0.3rem, -0.7rem);
+            width: 100%;
+            transform: translateY(-1.2rem);
+        }
+        .randers-logo
+        {
+            flex: none;
+            width: 12rem;
+            max-width: none;
+            transform: translateX(1rem);
         }
         .header a
         {
@@ -189,9 +201,12 @@
         align-content: center;
         height: 9rem;
     }
-    .randers-logo
+    .menu-brand
     {
         width: 100%;
+    }
+    .randers-logo
+    {
         object-position: left center;
     }
 }
