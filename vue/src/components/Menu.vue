@@ -1,4 +1,6 @@
 <script setup>
+    import randersLogo from '@/assets/randers-logo.svg'
+
     // Dark mode
 
     function toggleDarkMode()
@@ -13,7 +15,7 @@
 
     <div class="header">
 
-        <img class="randers-logo" src="/randers-logo.svg" alt="Randers Kommune">
+        <img class="randers-logo" :src="randersLogo" alt="Randers Kommune">
         
         <router-link to="/" active-class="selected">
             <span>Borgere</span>
