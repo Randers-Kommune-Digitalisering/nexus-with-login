@@ -92,10 +92,16 @@ const sortRecords = (records) => {
         const left = sortValue(first, sortField.value);
         const right = sortValue(second, sortField.value);
         const missing = value => value == null || value === '' || (typeof value === 'number' && !Number.isFinite(value));
-        if (missing(left) || missing(right)) return Number(missing(left)) - Number(missing(right));
+        const direction = sortDirection.value === 'ascending' ? 1 : -1;
+        if (missing(left) || missing(right)) {
+            const difference = Number(missing(left)) - Number(missing(right));
+            if (sortField.value === 'deceasedDate') return -difference * direction;
+            if (sortField.value === 'referenceDate') return difference * direction;
+            return difference;
+        }
         const comparison = typeof left === 'number' && typeof right === 'number'
             ? left - right : collator.compare(String(left), String(right));
-        return sortDirection.value === 'ascending' ? comparison : -comparison;
+        return comparison * direction;
     });
 };
 const sortedAllPatientRecords = computed(() => sortRecords(allPatientRecords.value ?? []));
@@ -604,7 +610,7 @@ onMounted(loadCitizenLists);
                             </button>
                         </th>
                         <th v-for="column in otherColumns" :key="column.field" scope="col" :class="column.className">{{ column.label }}</th>
-                        <th v-for="key in additionalInfoKeys" :key="key" scope="col" :class="{ 'subject-column': key.toLowerCase() === 'emne' }">{{ key }}</th>
+                        <th v-for="key in additionalInfoKeys" :key="key" scope="col" :class="{ 'subject-column': key.toLowerCase() === 'emne' }">{{ key.toLowerCase() === 'emne' ? 'Notat emne' : key }}</th>
                         <th scope="col" class="single-line" :aria-sort="sortField === 'referenceDate' ? sortDirection : undefined">
                             <button type="button" class="sort-header" :disabled="editSaving || fetching" @click="sortBy('referenceDate')">
                                 Notat tid <component :is="sortIcon('referenceDate')" aria-hidden="true" />
