@@ -55,6 +55,7 @@ const formatTime = (timestamp) => {
 const noteStatus = (value) => {
     const name = typeof value === 'string' ? value : value?.name;
     if (typeof name !== 'string') return '';
+    if (name.trim().toUpperCase() === 'LOCKED') return 'Låst';
     return ['Udfyldt', 'Kladde', 'Låst'].find(status => status.toLowerCase() === name.trim().toLowerCase()) ?? name.trim();
 };
 let preferencesUrl;
@@ -144,7 +145,7 @@ const editNote = async (patient, note, rowIndex, noteIndex) => {
             throw new Error(failureMessage);
         }
         const form = await formResponse.json();
-        if (noteStatus(form?.status) === 'Låst') {
+        if (noteStatus(form?.workflowState) === 'Låst') {
             note.status = 'Låst';
             failureMessage = 'Låste sagsnoter kan ikke redigeres.';
             throw new Error('Locked note');
@@ -174,7 +175,7 @@ const editNote = async (patient, note, rowIndex, noteIndex) => {
 
         const subject = String(subjectItem.value ?? '');
         const text = String(textItem.value ?? '');
-        const currentStatus = note.status || noteStatus(form?.status);
+        const currentStatus = note.status || noteStatus(form?.workflowState);
         const actionIndex = editableActions.findIndex(action => noteStatus(action.name) === currentStatus);
         editState.value = {
             form, patient, note, actions: editableActions, actionsUrl: actionsLink.url,
@@ -283,7 +284,7 @@ const additionalInfoForPatient = async (patient) => {
                 .map(({ key, value }) => [key.trim().replace(/:+$/, '').toLowerCase(), value ?? '']));
             return {
                 subject: fields.emne ?? '', text: fields.tekst ?? '',
-                status: noteStatus(entry?.status) || noteStatus(entry?.state) || noteStatus(fields.status) || noteStatus(fields.tilstand),
+                status: noteStatus(entry?.workflowState),
                 date: Number.isFinite(parsedDate) ? parsedDate : null,
                 referencedObjectHref: entry?._links?.referencedObject?.href,
                 sourceHref: new URL(entry?._links?.self?.href ?? sourceUrl.href, sourceUrl).href,
