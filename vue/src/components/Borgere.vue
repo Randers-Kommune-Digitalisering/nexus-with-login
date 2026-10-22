@@ -95,8 +95,8 @@ const sortRecords = (records) => {
         const direction = sortDirection.value === 'ascending' ? 1 : -1;
         if (missing(left) || missing(right)) {
             const difference = Number(missing(left)) - Number(missing(right));
-            if (sortField.value === 'deceasedDate') return -difference * direction;
-            if (sortField.value === 'referenceDate') return difference * direction;
+            if (sortField.value === 'deceasedDate') return difference * direction;
+            if (sortField.value === 'referenceDate') return -difference * direction;
             return difference;
         }
         const comparison = typeof left === 'number' && typeof right === 'number'
