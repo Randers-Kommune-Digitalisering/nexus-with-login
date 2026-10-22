@@ -40,9 +40,18 @@
 .menu-brand
 {
     flex: none;
-    width: 12rem;
+    width: 13rem;
     display: flex;
+    align-self: center;
     justify-content: center;
+    padding-left: 1rem;
+    margin-right: 1rem;
+}
+.randers-logo
+{
+    flex: none;
+    width: 12rem;
+    max-width: none;
 }
 
 /* Is top header */
@@ -148,13 +157,12 @@
         {
             align-self: center;
             width: 100%;
+            padding-left: 0;
+            margin-right: 0;
             transform: translateY(-1.2rem);
         }
         .randers-logo
         {
-            flex: none;
-            width: 12rem;
-            max-width: none;
             transform: translateX(1rem);
         }
         .header a
@@ -192,6 +200,10 @@
         padding-left: 10px;
         padding-right: 10px;
     }
+    .menu-brand
+    {
+        justify-content: flex-start;
+    }
 }
 @media screen and (max-width: 22rem)
 {
@@ -204,6 +216,7 @@
     .menu-brand
     {
         width: 100%;
+        margin-right: 0;
     }
     .randers-logo
     {

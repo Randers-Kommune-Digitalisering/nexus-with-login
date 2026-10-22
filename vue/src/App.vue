@@ -1,5 +1,11 @@
 <script setup>
+import { provide, ref } from 'vue'
 import Header from './components/Menu.vue'
+import LoginSession from './components/LoginSession.vue'
+
+const homeResource = ref(null)
+provide('homeResource', homeResource)
+const setHomeResource = (home) => { homeResource.value = home }
 </script>
 
 <template>
@@ -13,6 +19,7 @@ import Header from './components/Menu.vue'
   <main>
 
       <div class="content">
+          <LoginSession @session-change="setHomeResource" />
           <router-view></router-view>
       </div>
 

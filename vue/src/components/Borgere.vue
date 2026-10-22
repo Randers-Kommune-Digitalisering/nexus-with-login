@@ -7,6 +7,8 @@ const props = defineProps({ homeResource: { type: Object, required: true } });
 const citizenLists = ref([]);
 const selectedId = ref('');
 const patientRecords = ref([]);
+const allPatientRecords = ref(null);
+const pageSizes = ref([]);
 const pages = ref([]);
 const currentPageIndex = ref(0);
 const totalItems = ref(0);
@@ -69,10 +71,7 @@ const formatTime = (timestamp) => {
 const formatDate = (value) => {
     if (!value) return '';
     const timestamp = Date.parse(value);
-    if (!Number.isFinite(timestamp)) return '';
-    return new Intl.DateTimeFormat('da-DK', {
-        timeZone: 'Europe/Copenhagen', day: '2-digit', month: '2-digit', year: 'numeric',
-    }).format(timestamp);
+    return formatTime(timestamp);
 };
 const sortValue = (patient, field) => {
     switch (field) {
@@ -81,9 +80,9 @@ const sortValue = (patient, field) => {
         case 'deceasedDate': return patient.deceasedDate ? Date.parse(patient.deceasedDate) : null;
     }
 };
-const sortedPatientRecords = computed(() => {
-    if (!sortField.value) return patientRecords.value;
-    return [...patientRecords.value].sort((first, second) => {
+const sortRecords = (records) => {
+    if (!sortField.value) return records;
+    return [...records].sort((first, second) => {
         const left = sortValue(first, sortField.value);
         const right = sortValue(second, sortField.value);
         const missing = value => value == null || value === '' || (typeof value === 'number' && !Number.isFinite(value));
@@ -92,13 +91,39 @@ const sortedPatientRecords = computed(() => {
             ? left - right : collator.compare(String(left), String(right));
         return sortDirection.value === 'ascending' ? comparison : -comparison;
     });
-});
-const sortBy = (field) => {
-    if (editSaving.value) return;
+};
+const sortedAllPatientRecords = computed(() => sortRecords(allPatientRecords.value ?? []));
+const sortedPatientRecords = computed(() => allPatientRecords.value ? patientRecords.value : sortRecords(patientRecords.value));
+const sortBy = async (field) => {
+    if (editSaving.value || fetching.value) return;
     cancelEdit();
     expandedPatient.value = null;
+    if (pages.value.length > 1 && !allPatientRecords.value) {
+        const requestId = ++selectionRequest;
+        error.value = '';
+        fetching.value = true;
+        try {
+            const recordsByPage = new Array(pages.value.length);
+            let nextPage = 0;
+            await Promise.all(Array.from({ length: Math.min(4, pages.value.length) }, async () => {
+                while (nextPage < pages.value.length && requestId === selectionRequest) {
+                    const pageIndex = nextPage++;
+                    recordsByPage[pageIndex] = await fetchPageRecords(pageIndex);
+                }
+            }));
+            if (requestId !== selectionRequest) return;
+            allPatientRecords.value = recordsByPage.flat();
+            pageSizes.value = recordsByPage.map(records => records.length);
+        } catch (cause) {
+            if (requestId === selectionRequest) error.value = cause.message;
+            return;
+        } finally {
+            if (requestId === selectionRequest) fetching.value = false;
+        }
+    }
     sortDirection.value = sortField.value === field && sortDirection.value === 'ascending' ? 'descending' : 'ascending';
     sortField.value = field;
+    if (allPatientRecords.value) await fetchPatientPage(0);
 };
 const sortIcon = (field) => sortField.value === field
     ? (sortDirection.value === 'ascending' ? ArrowUp : ArrowDown) : ArrowUpDown;
@@ -381,6 +406,25 @@ const loadCitizenLists = async () => {
     }
 };
 
+const fetchPageRecords = async (pageIndex) => {
+    const href = pages.value[pageIndex]?._links?.patientData?.href;
+    if (typeof href !== 'string' || !href) throw new Error('Missing patient data link');
+    const patientUrl = new URL(href, contentUrl);
+    const apiPrefix = preferencesUrl.pathname.slice(0, -'preferences'.length);
+    if (patientUrl.origin !== preferencesUrl.origin || patientUrl.pathname !== `${apiPrefix}patients`
+        || !patientUrl.searchParams.has('ids') || patientUrl.hash) {
+        throw new Error('Invalid patient data link');
+    }
+
+    const response = await fetch(`/api/nexus/patients${patientUrl.search}`);
+    if (!response.ok) throw new Error(`Patient data: HTTP ${response.status}`);
+    const data = await response.json();
+    const records = Array.isArray(data) ? data :
+        [data?.patients, data?.items, data?.content, data?._embedded?.patients].find(Array.isArray);
+    if (!records) throw new Error('Unexpected patient data response');
+    return records;
+};
+
 const fetchPatientPage = async (pageIndex) => {
     const requestId = ++selectionRequest;
     cancelEdit();
@@ -389,21 +433,10 @@ const fetchPatientPage = async (pageIndex) => {
     error.value = '';
     fetching.value = true;
     try {
-        const href = pages.value[pageIndex]?._links?.patientData?.href;
-        if (typeof href !== 'string' || !href) throw new Error('Missing patient data link');
-        const patientUrl = new URL(href, contentUrl);
-        const apiPrefix = preferencesUrl.pathname.slice(0, -'preferences'.length);
-        if (patientUrl.origin !== preferencesUrl.origin || patientUrl.pathname !== `${apiPrefix}patients`
-            || !patientUrl.searchParams.has('ids') || patientUrl.hash) {
-            throw new Error('Invalid patient data link');
-        }
-
-        const response = await fetch(`/api/nexus/patients${patientUrl.search}`);
-        if (!response.ok) throw new Error(`Patient data: HTTP ${response.status}`);
-        const data = await response.json();
-        const records = Array.isArray(data) ? data :
-            [data?.patients, data?.items, data?.content, data?._embedded?.patients].find(Array.isArray);
-        if (!records) throw new Error('Unexpected patient data response');
+        const offset = pageSizes.value.slice(0, pageIndex).reduce((sum, size) => sum + size, 0);
+        const records = allPatientRecords.value
+            ? sortedAllPatientRecords.value.slice(offset, offset + pageSizes.value[pageIndex])
+            : await fetchPageRecords(pageIndex);
         if (requestId !== selectionRequest) return;
         const rows = await Promise.all(records.map(async patient => ({
             ...patient,
@@ -425,6 +458,10 @@ const fetchSelected = async () => {
     const requestId = ++selectionRequest;
     cancelEdit();
     patientRecords.value = [];
+    allPatientRecords.value = null;
+    pageSizes.value = [];
+    sortField.value = '';
+    sortDirection.value = 'ascending';
     expandedPatient.value = null;
     pages.value = [];
     totalItems.value = 0;
@@ -486,7 +523,7 @@ onMounted(loadCitizenLists);
     <div class="citizen-list">
         <label for="citizen-list-select">Borgere</label>
         <div class="controls">
-            <select id="citizen-list-select" v-model="selectedId" :disabled="loading || editSaving" @change="fetchSelected">
+            <select id="citizen-list-select" v-model="selectedId" :disabled="loading || fetching || editSaving" @change="fetchSelected">
                 <option value="">Vælg en liste</option>
                 <option v-for="list in citizenLists" :key="list.id" :value="list.id">{{ list.name }}</option>
             </select>
@@ -502,13 +539,13 @@ onMounted(loadCitizenLists);
                     <tr>
                         <th v-for="column in sortableColumns" :key="column.field" scope="col" :class="column.className"
                             :aria-sort="sortField === column.field ? sortDirection : undefined">
-                            <button type="button" class="sort-header" :disabled="editSaving" @click="sortBy(column.field)">
+                            <button type="button" class="sort-header" :disabled="editSaving || fetching" @click="sortBy(column.field)">
                                 {{ column.label }} <component :is="sortIcon(column.field)" aria-hidden="true" />
                             </button>
                         </th>
                         <th v-for="column in otherColumns" :key="column.field" scope="col" :class="column.className">{{ column.label }}</th>
                         <th v-for="key in additionalInfoKeys" :key="key" scope="col">{{ key }}</th>
-                        <th scope="col" class="single-line">Tid</th>
+                        <th scope="col" class="single-line">Sidste notat</th>
                         <th scope="col" class="row-action"><span class="visually-hidden">Sagsnoter</span></th>
                     </tr>
                 </thead>
