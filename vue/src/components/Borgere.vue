@@ -32,9 +32,9 @@ const sortableColumns = [
 ];
 const otherColumns = [
     { field: 'address', label: 'Adresse' },
-    { field: 'homePhoneNumber', label: 'Hjemmetelefon', className: 'single-line' },
-    { field: 'mobilePhoneNumber', label: 'Mobiltelefon', className: 'single-line' },
-    { field: 'workPhoneNumber', label: 'Arbejdstelefon', className: 'single-line' },
+    { field: 'homePhoneNumber', label: 'Hjemme', className: 'phone-column' },
+    { field: 'mobilePhoneNumber', label: 'Mobil', className: 'phone-column' },
+    { field: 'workPhoneNumber', label: 'Arbejde', className: 'phone-column' },
 ];
 const editChanged = computed(() => {
     const state = editState.value;
@@ -604,10 +604,10 @@ onMounted(loadCitizenLists);
                             </button>
                         </th>
                         <th v-for="column in otherColumns" :key="column.field" scope="col" :class="column.className">{{ column.label }}</th>
-                        <th v-for="key in additionalInfoKeys" :key="key" scope="col">{{ key }}</th>
+                        <th v-for="key in additionalInfoKeys" :key="key" scope="col" :class="{ 'subject-column': key.toLowerCase() === 'emne' }">{{ key }}</th>
                         <th scope="col" class="single-line" :aria-sort="sortField === 'referenceDate' ? sortDirection : undefined">
                             <button type="button" class="sort-header" :disabled="editSaving || fetching" @click="sortBy('referenceDate')">
-                                Sidste notat <component :is="sortIcon('referenceDate')" aria-hidden="true" />
+                                Notat tid <component :is="sortIcon('referenceDate')" aria-hidden="true" />
                             </button>
                         </th>
                         <th scope="col" class="row-action"><span class="visually-hidden">Sagsnoter</span></th>
@@ -620,11 +620,11 @@ onMounted(loadCitizenLists);
                         <td class="single-line">{{ patient.patientIdentifier?.identifier }}</td>
                         <td><span class="name-text">{{ patient.fullReversedName }}</span></td>
                         <td><span class="address-text">{{ formatAddress(patient.currentAddress) }}</span></td>
-                        <td class="single-line">{{ patient.homePhoneNumber }}</td>
-                        <td class="single-line">{{ patient.mobilePhoneNumber }}</td>
-                        <td class="single-line">{{ patient.workPhoneNumber }}</td>
+                        <td class="phone-column">{{ patient.homePhoneNumber }}</td>
+                        <td class="phone-column">{{ patient.mobilePhoneNumber }}</td>
+                        <td class="phone-column">{{ patient.workPhoneNumber }}</td>
                         <td v-for="key in additionalInfoKeys" :key="key">
-                            <span class="clamped extra-text">{{ patient.additionalInfo?.[key] }}</span>
+                            <span class="clamped extra-text" :class="{ 'subject-text': key.toLowerCase() === 'emne' }">{{ patient.additionalInfo?.[key] }}</span>
                         </td>
                         <td class="single-line">{{ formatTime(patient.referenceDate) || '-' }}</td>
                         <td class="row-action">
@@ -830,6 +830,16 @@ onMounted(loadCitizenLists);
         display: block;
         width: 16rem;
         overflow-wrap: anywhere;
+    }
+    .phone-column {
+        width: 11rem;
+        max-width: 11rem;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    .subject-column, .subject-text {
+        width: 16rem;
+        max-width: 16rem;
     }
     .extra-text {
         max-width: 22rem;
