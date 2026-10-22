@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, toRaw } from 'vue';
-import { ChevronDown, ChevronUp, Pencil, Plus } from '@lucide/vue';
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronUp, Pencil, Plus } from '@lucide/vue';
 import { noteFormDefinitionId, programPathwayId, referenceFilterId } from '../nexusConfig';
 
 const props = defineProps({ homeResource: { type: Object, required: true } });
@@ -13,12 +13,24 @@ const totalItems = ref(0);
 const error = ref('');
 const loading = ref(true);
 const fetching = ref(false);
-const expandedRowIndex = ref(null);
+const expandedPatient = ref(null);
 const editingNoteKey = ref(null);
 const editState = ref(null);
 const editLoading = ref(false);
 const editSaving = ref(false);
 const editError = ref('');
+const sortField = ref('');
+const sortDirection = ref('ascending');
+const collator = new Intl.Collator('da-DK', { numeric: true, sensitivity: 'base' });
+const patientColumns = [
+    { field: 'deceasedDate', label: 'Dødsdato', className: 'single-line' },
+    { field: 'identifier', label: 'CPR', className: 'single-line' },
+    { field: 'name', label: 'Navn', className: 'single-line' },
+    { field: 'address', label: 'Adresse' },
+    { field: 'homePhoneNumber', label: 'Hjemmetelefon', className: 'single-line' },
+    { field: 'mobilePhoneNumber', label: 'Mobiltelefon', className: 'single-line' },
+    { field: 'workPhoneNumber', label: 'Arbejdstelefon', className: 'single-line' },
+];
 const editChanged = computed(() => {
     const state = editState.value;
     if (!state) return false;
@@ -52,6 +64,49 @@ const formatTime = (timestamp) => {
     }).formatToParts(timestamp).map(({ type, value }) => [type, value]));
     return `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}`;
 };
+const formatDate = (value) => {
+    if (!value) return '';
+    const timestamp = Date.parse(value);
+    if (!Number.isFinite(timestamp)) return '';
+    return new Intl.DateTimeFormat('da-DK', {
+        timeZone: 'Europe/Copenhagen', day: '2-digit', month: '2-digit', year: 'numeric',
+    }).format(timestamp);
+};
+const sortValue = (patient, field) => {
+    switch (field) {
+        case 'identifier': return patient.patientIdentifier?.identifier;
+        case 'name': return patient.fullReversedName;
+        case 'address': return formatAddress(patient.currentAddress);
+        case 'homePhoneNumber':
+        case 'mobilePhoneNumber':
+        case 'workPhoneNumber': return patient[field];
+        case 'deceasedDate': return patient.deceasedDate ? Date.parse(patient.deceasedDate) : null;
+        case 'referenceDate': return patient.referenceDate;
+        case 'notes': return patient.notes?.length ?? 0;
+        default: return field.startsWith('additional:') ? patient.additionalInfo?.[field.slice('additional:'.length)] : null;
+    }
+};
+const sortedPatientRecords = computed(() => {
+    if (!sortField.value) return patientRecords.value;
+    return [...patientRecords.value].sort((first, second) => {
+        const left = sortValue(first, sortField.value);
+        const right = sortValue(second, sortField.value);
+        const missing = value => value == null || value === '' || (typeof value === 'number' && !Number.isFinite(value));
+        if (missing(left) || missing(right)) return Number(missing(left)) - Number(missing(right));
+        const comparison = typeof left === 'number' && typeof right === 'number'
+            ? left - right : collator.compare(String(left), String(right));
+        return sortDirection.value === 'ascending' ? comparison : -comparison;
+    });
+});
+const sortBy = (field) => {
+    if (editSaving.value) return;
+    cancelEdit();
+    expandedPatient.value = null;
+    sortDirection.value = sortField.value === field && sortDirection.value === 'ascending' ? 'descending' : 'ascending';
+    sortField.value = field;
+};
+const sortIcon = (field) => sortField.value === field
+    ? (sortDirection.value === 'ascending' ? ArrowUp : ArrowDown) : ArrowUpDown;
 const noteStatus = (value) => {
     const name = typeof value === 'string' ? value : value?.name;
     if (typeof name !== 'string') return '';
@@ -82,10 +137,10 @@ const cancelEdit = () => {
     editError.value = '';
 };
 
-const toggleRow = (index) => {
+const toggleRow = (patient) => {
     if (editSaving.value) return;
     cancelEdit();
-    expandedRowIndex.value = expandedRowIndex.value === index ? null : index;
+    expandedPatient.value = expandedPatient.value === patient ? null : patient;
 };
 
 const addNote = async (patient, rowIndex) => {
@@ -335,7 +390,7 @@ const fetchPatientPage = async (pageIndex) => {
     const requestId = ++selectionRequest;
     cancelEdit();
     patientRecords.value = [];
-    expandedRowIndex.value = null;
+    expandedPatient.value = null;
     error.value = '';
     fetching.value = true;
     try {
@@ -375,7 +430,7 @@ const fetchSelected = async () => {
     const requestId = ++selectionRequest;
     cancelEdit();
     patientRecords.value = [];
-    expandedRowIndex.value = null;
+    expandedPatient.value = null;
     pages.value = [];
     totalItems.value = 0;
     currentPageIndex.value = 0;
@@ -450,20 +505,35 @@ onMounted(loadCitizenLists);
             <table class="patient-table">
                 <thead>
                     <tr>
-                        <th scope="col" class="single-line">CPR</th>
-                        <th scope="col" class="single-line">Navn</th>
-                        <th scope="col">Adresse</th>
-                        <th scope="col" class="single-line">Hjemmetelefon</th>
-                        <th scope="col" class="single-line">Mobiltelefon</th>
-                        <th scope="col" class="single-line">Arbejdstelefon</th>
-                        <th v-for="key in additionalInfoKeys" :key="key" scope="col">{{ key }}</th>
-                        <th scope="col" class="single-line">Tid</th>
-                        <th scope="col" class="row-action"><span class="visually-hidden">Sagsnoter</span></th>
+                        <th v-for="column in patientColumns" :key="column.field" scope="col" :class="column.className"
+                            :aria-sort="sortField === column.field ? sortDirection : undefined">
+                            <button type="button" class="sort-header" :disabled="editSaving" @click="sortBy(column.field)">
+                                {{ column.label }} <component :is="sortIcon(column.field)" aria-hidden="true" />
+                            </button>
+                        </th>
+                        <th v-for="key in additionalInfoKeys" :key="key" scope="col"
+                            :aria-sort="sortField === `additional:${key}` ? sortDirection : undefined">
+                            <button type="button" class="sort-header" :disabled="editSaving" @click="sortBy(`additional:${key}`)">
+                                {{ key }} <component :is="sortIcon(`additional:${key}`)" aria-hidden="true" />
+                            </button>
+                        </th>
+                        <th scope="col" class="single-line" :aria-sort="sortField === 'referenceDate' ? sortDirection : undefined">
+                            <button type="button" class="sort-header" :disabled="editSaving" @click="sortBy('referenceDate')">
+                                Tid <component :is="sortIcon('referenceDate')" aria-hidden="true" />
+                            </button>
+                        </th>
+                        <th scope="col" class="row-action" :aria-sort="sortField === 'notes' ? sortDirection : undefined">
+                            <button type="button" class="sort-header" :disabled="editSaving" aria-label="Sorter efter antal sagsnoter"
+                                title="Sorter efter antal sagsnoter" @click="sortBy('notes')">
+                                <component :is="sortIcon('notes')" aria-hidden="true" />
+                            </button>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
-                    <template v-for="(patient, index) in patientRecords" :key="patient.id ?? index">
-                    <tr class="patient-row" :class="{ expanded: expandedRowIndex === index }" @click="toggleRow(index)">
+                    <template v-for="(patient, index) in sortedPatientRecords" :key="patient.id ?? index">
+                    <tr class="patient-row" :class="{ expanded: expandedPatient === patient }" @click="toggleRow(patient)">
+                        <td class="single-line">{{ formatDate(patient.deceasedDate) }}</td>
                         <td class="single-line">{{ patient.patientIdentifier?.identifier }}</td>
                         <td><span class="name-text">{{ patient.fullReversedName }}</span></td>
                         <td><span class="address-text">{{ formatAddress(patient.currentAddress) }}</span></td>
@@ -475,16 +545,16 @@ onMounted(loadCitizenLists);
                         </td>
                         <td class="single-line">{{ formatTime(patient.referenceDate) }}</td>
                         <td class="row-action">
-                            <button type="button" class="icon-button" :disabled="editSaving" :aria-expanded="expandedRowIndex === index"
-                                :aria-controls="`patient-notes-${index}`" :aria-label="`${expandedRowIndex === index ? 'Skjul' : 'Vis'} sagsnoter for ${patient.fullReversedName}`"
-                                @click.stop="toggleRow(index)">
-                                <ChevronUp v-if="expandedRowIndex === index" aria-hidden="true" />
+                            <button type="button" class="icon-button" :disabled="editSaving" :aria-expanded="expandedPatient === patient"
+                                :aria-controls="`patient-notes-${index}`" :aria-label="`${expandedPatient === patient ? 'Skjul' : 'Vis'} sagsnoter for ${patient.fullReversedName}`"
+                                @click.stop="toggleRow(patient)">
+                                <ChevronUp v-if="expandedPatient === patient" aria-hidden="true" />
                                 <ChevronDown v-else aria-hidden="true" />
                             </button>
                         </td>
                     </tr>
-                    <tr v-if="expandedRowIndex === index" :id="`patient-notes-${index}`" class="notes-row">
-                        <td :colspan="8 + additionalInfoKeys.length">
+                    <tr v-if="expandedPatient === patient" :id="`patient-notes-${index}`" class="notes-row">
+                        <td :colspan="9 + additionalInfoKeys.length">
                             <div class="notes-panel card randers">
                                 <div class="header notes-header">
                                     <button type="button" class="add-note" :disabled="editSaving || editingNoteKey === `${index}:new`" @click="addNote(patient, index)">
@@ -621,6 +691,30 @@ onMounted(loadCitizenLists);
     .patient-table th {
         white-space: nowrap;
         overflow-wrap: normal;
+    }
+    .sort-header {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.25rem 0;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+    }
+    .patient-table .sort-header:hover, .patient-table .sort-header:focus {
+        background: transparent;
+        color: inherit;
+    }
+    .sort-header:disabled {
+        opacity: 0.55;
+        cursor: default;
+    }
+    .sort-header svg {
+        width: 1rem;
+        height: 1rem;
+        flex: none;
     }
     .patient-table th:not(:last-child), .patient-table td:not(:last-child) {
         padding-right: 0.5rem;
