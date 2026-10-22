@@ -1,55 +1,4 @@
 <script setup>
-    import { ref } from 'vue'
-
-    defineExpose( { setAlert } )
-
-    // Set menu items
-
-    const menuItems = ref([
-        {
-            "title": "Start",
-            "url": "/"
-        },
-        {
-            "title": "UI Templates",
-            "url": "/templates",
-            "alert": "OBS"
-        },
-        {
-            "title": "Vue Info",
-            "url": "/vue"
-        }
-    ])
-
-    // Set selected = true for landing page (URL)
-
-    const landingPageIndex = menuItems.value.findIndex(x => x.url == new URL(location.href).pathname)
-
-    if(landingPageIndex !== -1)
-        menuItems.value[ landingPageIndex ].selected = true
-
-
-    // Function to visually update selected item
-
-    function select(item)
-    {
-        menuItems.value.forEach(x => x.selected = false)
-        item.selected = true
-    }
-
-    // Function to set alert on an item
-
-    function setAlert(itemTitle, alert)
-    {
-        // Delete alert
-        if(alert === "" || alert === null || alert === undefined)
-            delete menuItems.value[ menuItems.value.findIndex(x => x.title == itemTitle) ].alert
-
-        // Set alert
-        else
-            menuItems.value[ menuItems.value.findIndex(x => x.title == itemTitle) ].alert = alert
-    }
-
     // Dark mode
 
     function toggleDarkMode()
@@ -64,11 +13,10 @@
 
     <div class="header">
 
-        <div class="randers-logo"></div>
+        <img class="randers-logo" src="/randers-logo.svg" alt="Randers Kommune">
         
-        <router-link v-for="item in menuItems" :to="item.url" :class="item.selected ? 'selected' : ''" @click="select(item)">
-            <span v-if="item.alert" class="alert">{{item.alert}}</span>
-            <span>{{item.title}}</span>
+        <router-link to="/" active-class="selected">
+            <span>Borgere</span>
         </router-link>
 
         <div class="filler"></div>
@@ -87,7 +35,8 @@
 /* 1 rem = 10 px, except when defining @media rules, then 1 rem = 16 px */
 .randers-logo
 {
-    background-position: 2rem 0rem;
+    flex: none;
+    width: 12rem;
 }
 
 /* Is top header */
@@ -183,11 +132,17 @@
         right: auto;
         left: 0rem;
         transform: none;
-        width: 14rem;
+        width: 12rem;
         height: 100vh;
 
         border-bottom: 0rem;
     }
+        .randers-logo
+        {
+            align-self: center;
+            width: calc(100% - 0.8rem);
+            transform: translate(0.3rem, -0.7rem);
+        }
         .header a
         {
             padding-right: 1.5rem;
@@ -215,17 +170,27 @@
 }
 
 
-/* Logo skjules på meget små skærme */
+/* Narrow screens */
 @media screen and (max-width: 35rem)
 {
-    .randers-logo
-    {
-        display: none;
-    }
     .header
     {
         padding-left: 10px;
         padding-right: 10px;
+    }
+}
+@media screen and (max-width: 22rem)
+{
+    .header
+    {
+        flex-wrap: wrap;
+        align-content: center;
+        height: 9rem;
+    }
+    .randers-logo
+    {
+        width: 100%;
+        object-position: left center;
     }
 }
 </style>

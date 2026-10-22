@@ -736,13 +736,32 @@ onMounted(loadCitizenLists);
     .notes-table th:nth-child(5) {
         width: 5.5rem;
     }
-    .notes-table tbody tr.editing {
-        font-weight: 700;
+    .notes-table tbody tr.editing,
+    .notes-table tbody tr.editing + tr.note-editor-row {
+        position: relative;
     }
-    .notes-table tbody tr.draft {
+    .notes-table tbody tr.editing > td,
+    .notes-table tbody tr.editing + tr.note-editor-row > td {
+        border: 0;
+    }
+    .notes-table tbody tr.editing::after,
+    .notes-table tbody tr.editing + tr.note-editor-row::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        border: 2px solid var(--randers-color-dark);
+    }
+    .notes-table tbody tr.editing::after {
+        border-bottom: 0;
+    }
+    .notes-table tbody tr.editing + tr.note-editor-row::after {
+        border-top: 0;
+    }
+    .notes-table tbody tr.draft > td:first-child {
         font-style: italic;
     }
-    .notes-table tbody tr.locked {
+    .notes-table tbody tr.locked > td:first-child {
         font-weight: 700;
     }
     .note-text {

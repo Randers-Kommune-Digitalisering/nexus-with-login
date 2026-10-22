@@ -1,6 +1,6 @@
 <script setup>
     import Content from '@/components/Content.vue'
-    import Homeressource from '@/components/Homeressource.vue'
+    import Borgere from '@/components/Borgere.vue'
 
     import { ref } from 'vue';
 
@@ -51,7 +51,7 @@
 </script>
 
 <template>
-    <h2>Randers Nexus</h2>
+    <h2>Borgere</h2>
 
     <Content>
         <div class="session-controls">
@@ -62,7 +62,7 @@
         </div>
         <p v-if="loginError" role="alert">{{ loginError }}</p>
     </Content>
-    <Homeressource v-if="isLoggedIn" :home-resource="homeResource" />
+    <Borgere v-if="isLoggedIn" :home-resource="homeResource" />
 
 </template>
 
