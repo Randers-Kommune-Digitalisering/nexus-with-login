@@ -22,10 +22,12 @@ const editError = ref('');
 const sortField = ref('');
 const sortDirection = ref('ascending');
 const collator = new Intl.Collator('da-DK', { numeric: true, sensitivity: 'base' });
-const patientColumns = [
+const sortableColumns = [
     { field: 'deceasedDate', label: 'Dødsdato', className: 'single-line' },
     { field: 'identifier', label: 'CPR', className: 'single-line' },
     { field: 'name', label: 'Navn', className: 'single-line' },
+];
+const otherColumns = [
     { field: 'address', label: 'Adresse' },
     { field: 'homePhoneNumber', label: 'Hjemmetelefon', className: 'single-line' },
     { field: 'mobilePhoneNumber', label: 'Mobiltelefon', className: 'single-line' },
@@ -76,14 +78,7 @@ const sortValue = (patient, field) => {
     switch (field) {
         case 'identifier': return patient.patientIdentifier?.identifier;
         case 'name': return patient.fullReversedName;
-        case 'address': return formatAddress(patient.currentAddress);
-        case 'homePhoneNumber':
-        case 'mobilePhoneNumber':
-        case 'workPhoneNumber': return patient[field];
         case 'deceasedDate': return patient.deceasedDate ? Date.parse(patient.deceasedDate) : null;
-        case 'referenceDate': return patient.referenceDate;
-        case 'notes': return patient.notes?.length ?? 0;
-        default: return field.startsWith('additional:') ? patient.additionalInfo?.[field.slice('additional:'.length)] : null;
     }
 };
 const sortedPatientRecords = computed(() => {
@@ -505,29 +500,16 @@ onMounted(loadCitizenLists);
             <table class="patient-table">
                 <thead>
                     <tr>
-                        <th v-for="column in patientColumns" :key="column.field" scope="col" :class="column.className"
+                        <th v-for="column in sortableColumns" :key="column.field" scope="col" :class="column.className"
                             :aria-sort="sortField === column.field ? sortDirection : undefined">
                             <button type="button" class="sort-header" :disabled="editSaving" @click="sortBy(column.field)">
                                 {{ column.label }} <component :is="sortIcon(column.field)" aria-hidden="true" />
                             </button>
                         </th>
-                        <th v-for="key in additionalInfoKeys" :key="key" scope="col"
-                            :aria-sort="sortField === `additional:${key}` ? sortDirection : undefined">
-                            <button type="button" class="sort-header" :disabled="editSaving" @click="sortBy(`additional:${key}`)">
-                                {{ key }} <component :is="sortIcon(`additional:${key}`)" aria-hidden="true" />
-                            </button>
-                        </th>
-                        <th scope="col" class="single-line" :aria-sort="sortField === 'referenceDate' ? sortDirection : undefined">
-                            <button type="button" class="sort-header" :disabled="editSaving" @click="sortBy('referenceDate')">
-                                Tid <component :is="sortIcon('referenceDate')" aria-hidden="true" />
-                            </button>
-                        </th>
-                        <th scope="col" class="row-action" :aria-sort="sortField === 'notes' ? sortDirection : undefined">
-                            <button type="button" class="sort-header" :disabled="editSaving" aria-label="Sorter efter antal sagsnoter"
-                                title="Sorter efter antal sagsnoter" @click="sortBy('notes')">
-                                <component :is="sortIcon('notes')" aria-hidden="true" />
-                            </button>
-                        </th>
+                        <th v-for="column in otherColumns" :key="column.field" scope="col" :class="column.className">{{ column.label }}</th>
+                        <th v-for="key in additionalInfoKeys" :key="key" scope="col">{{ key }}</th>
+                        <th scope="col" class="single-line">Tid</th>
+                        <th scope="col" class="row-action"><span class="visually-hidden">Sagsnoter</span></th>
                     </tr>
                 </thead>
                 <tbody>
