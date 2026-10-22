@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, toRaw } from 'vue';
 import { ChevronDown, ChevronUp, Pencil, Plus } from '@lucide/vue';
+import { noteFormDefinitionId, programPathwayId, referenceFilterId } from '../nexusConfig';
 
 const props = defineProps({ homeResource: { type: Object, required: true } });
 const citizenLists = ref([]);
@@ -21,8 +22,10 @@ const editError = ref('');
 const editChanged = computed(() => {
     const state = editState.value;
     if (!state) return false;
+    if (!state.actionIndex && state.actionIndex !== 0) return false;
     if (state.mode === 'create') return Boolean(state.subject.trim() && state.text.trim());
-    return state.subject !== state.originalSubject || state.text !== state.originalText;
+    return state.subject !== state.originalSubject || state.text !== state.originalText
+        || state.actionIndex !== state.originalActionIndex;
 });
 const selectedList = computed(() => citizenLists.value.find(list => list.id === selectedId.value));
 const additionalInfoKeys = computed(() => [...new Set(
@@ -48,6 +51,11 @@ const formatTime = (timestamp) => {
         hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
     }).formatToParts(timestamp).map(({ type, value }) => [type, value]));
     return `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}`;
+};
+const noteStatus = (value) => {
+    const name = typeof value === 'string' ? value : value?.name;
+    if (typeof name !== 'string') return '';
+    return ['Udfyldt', 'Kladde', 'Låst'].find(status => status.toLowerCase() === name.trim().toLowerCase()) ?? name.trim();
 };
 let preferencesUrl;
 let contentUrl;
@@ -89,7 +97,7 @@ const addNote = async (patient, rowIndex) => {
         const patientId = String(patient?.id ?? '');
         if (!/^\d+$/.test(patientId)) throw new Error('Invalid patient ID');
         const prototypeLink = nexusLink(
-            `patients/${patientId}/forms/prototype?formDefinitionId=807&programPathwayId=263606&placement=PATHWAY`,
+            `patients/${patientId}/forms/prototype?formDefinitionId=${noteFormDefinitionId}&programPathwayId=${programPathwayId}&placement=PATHWAY`,
             new URL('./', preferencesUrl),
         );
         const response = await fetch(prototypeLink.proxy);
@@ -99,9 +107,18 @@ const addNote = async (patient, rowIndex) => {
         const subject = Array.isArray(items) && items.find(item => item?.label === 'Emne:');
         const text = Array.isArray(items) && items.find(item => item?.label === 'Tekst:');
         if (!subject || !text) throw new Error('Missing note fields');
+        const actionsLink = nexusLink(prototype._links?.availableActions?.href, prototypeLink.url);
+        const actionsResponse = await fetch(actionsLink.proxy);
+        if (!actionsResponse.ok) throw new Error('Could not load actions');
+        const availableActions = await actionsResponse.json();
+        if (!Array.isArray(availableActions)) throw new Error('Unexpected actions response');
+        const actions = availableActions.filter(action => noteStatus(action?.name) && noteStatus(action.name) !== 'Låst'
+            && /^\d+$/.test(String(action.id ?? '')));
+        if (!actions.length) throw new Error('No available note actions');
         if (requestId !== editRequest) return;
         editState.value = {
             mode: 'create', form: prototype, patient, prototypeUrl: prototypeLink.url,
+            actions, actionIndex: '',
             subject: String(subject.value ?? ''), text: String(text.value ?? ''),
         };
     } catch {
@@ -112,7 +129,7 @@ const addNote = async (patient, rowIndex) => {
 };
 
 const editNote = async (patient, note, rowIndex, noteIndex) => {
-    if (!note.referencedObjectHref || editSaving.value) return;
+    if (!note.referencedObjectHref || note.status === 'Låst' || editSaving.value) return;
     cancelEdit();
     const requestId = editRequest;
     editingNoteKey.value = `${rowIndex}:${noteIndex}`;
@@ -127,6 +144,11 @@ const editNote = async (patient, note, rowIndex, noteIndex) => {
             throw new Error(failureMessage);
         }
         const form = await formResponse.json();
+        if (noteStatus(form?.status) === 'Låst') {
+            note.status = 'Låst';
+            failureMessage = 'Låste sagsnoter kan ikke redigeres.';
+            throw new Error('Locked note');
+        }
         const items = form?.items;
         const subjectItem = Array.isArray(items) && items.find(item => item.label === 'Emne:');
         const textItem = Array.isArray(items) && items.find(item => item.label === 'Tekst:');
@@ -144,17 +166,20 @@ const editNote = async (patient, note, rowIndex, noteIndex) => {
         const actions = await actionsResponse.json();
         failureMessage = 'Handlingssvaret er ikke en liste.';
         if (!Array.isArray(actions)) throw new Error('Unexpected actions response');
-        failureMessage = 'Handlingen Udfyldt blev ikke fundet.';
-        const completedAction = actions.find(action => action?.name === 'Udfyldt');
-        if (!completedAction) throw new Error('Missing completed action');
-        failureMessage = 'Udfyldt mangler et gyldigt updateFormData-link.';
-        const updateLink = nexusLink(completedAction?._links?.updateFormData?.href, actionsLink.url);
+        failureMessage = 'Ingen redigerbare handlinger blev fundet.';
+        const editableActions = actions.filter(action => noteStatus(action?.name) && noteStatus(action.name) !== 'Låst'
+            && action?._links?.updateFormData?.href);
+        if (!editableActions.length) throw new Error('No editable actions');
         if (requestId !== editRequest) return;
 
         const subject = String(subjectItem.value ?? '');
         const text = String(textItem.value ?? '');
+        const currentStatus = note.status || noteStatus(form?.status);
+        const actionIndex = editableActions.findIndex(action => noteStatus(action.name) === currentStatus);
         editState.value = {
-            form, patient, note, updateProxy: updateLink.proxy,
+            form, patient, note, actions: editableActions, actionsUrl: actionsLink.url,
+            actionIndex: actionIndex < 0 ? '' : actionIndex,
+            originalActionIndex: actionIndex < 0 ? '' : actionIndex,
             etag: formResponse.headers.get('ETag'),
             originalSubject: subject, originalText: text, subject, text,
         };
@@ -168,6 +193,8 @@ const editNote = async (patient, note, rowIndex, noteIndex) => {
 const saveNote = async () => {
     if (!editState.value || !editChanged.value || editSaving.value) return;
     const state = editState.value;
+    const action = state.actions[state.actionIndex];
+    if (!action || noteStatus(action.name) === 'Låst') return;
     const payload = structuredClone(toRaw(state.form));
     payload.items.find(item => item.label === 'Emne:').value = state.subject;
     payload.items.find(item => item.label === 'Tekst:').value = state.text;
@@ -175,27 +202,18 @@ const saveNote = async () => {
     editError.value = '';
     let failureMessage = 'Kunne ikke gemme sagsnoten. Prøv igen.';
     try {
-        let updateProxy = state.updateProxy;
+        let updateProxy;
         if (state.mode === 'create') {
-            failureMessage = 'Formularens availableActions-link mangler eller er ugyldigt.';
-            const actionsLink = nexusLink(payload._links?.availableActions?.href, state.prototypeUrl);
-            failureMessage = 'Kunne ikke hente formularens handlinger.';
-            const actionsResponse = await fetch(actionsLink.proxy);
-            if (!actionsResponse.ok) {
-                failureMessage = `Kunne ikke hente formularens handlinger (HTTP ${actionsResponse.status}).`;
-                throw new Error('Could not load actions');
-            }
-            const actions = await actionsResponse.json();
-            failureMessage = 'Handlingen Udfyldt blev ikke fundet.';
-            const completedAction = Array.isArray(actions) && actions.find(action => action?.name === 'Udfyldt');
-            if (!completedAction) throw new Error('Missing completed action');
-            failureMessage = 'Udfyldt mangler et gyldigt handlings-id.';
-            const actionId = String(completedAction.id ?? '');
+            failureMessage = 'Handlingen mangler et gyldigt handlings-id.';
+            const actionId = String(action.id ?? '');
             if (!/^\d+$/.test(actionId)) throw new Error('Invalid action ID');
             const patientId = String(state.patient?.id ?? '');
             if (!/^\d+$/.test(patientId)) throw new Error('Invalid patient ID');
             updateProxy = nexusLink(`patients/${patientId}/forms?actionId=${actionId}`,
                 new URL('./', preferencesUrl)).proxy;
+        } else {
+            failureMessage = 'Handlingen mangler et gyldigt updateFormData-link.';
+            updateProxy = nexusLink(action._links?.updateFormData?.href, state.actionsUrl).proxy;
         }
         failureMessage = 'Kunne ikke hente sikkerhedstoken.';
         const csrfResponse = await fetch('/api/csrf');
@@ -219,14 +237,15 @@ const saveNote = async () => {
         if (state.mode === 'create') {
             const existingCount = state.patient.notes.length;
             const refreshed = await additionalInfoForPatient(state.patient);
-            if (refreshed.notes.length > existingCount && refreshed.notes.some(note =>
-                note.subject === state.subject && note.text === state.text)) {
+            const createdNote = refreshed.notes.find(note => note.subject === state.subject && note.text === state.text);
+            if (refreshed.notes.length > existingCount && createdNote) {
+                createdNote.status ||= noteStatus(action.name);
                 Object.assign(state.patient, refreshed);
                 cancelEdit();
                 return;
             }
             const date = Date.now();
-            state.patient.notes.unshift({ subject: state.subject, text: state.text, date });
+            state.patient.notes.unshift({ subject: state.subject, text: state.text, status: noteStatus(action.name), date });
             state.patient.referenceDate = date;
             state.patient.additionalInfo.Emne = state.subject;
             cancelEdit();
@@ -234,6 +253,7 @@ const saveNote = async () => {
         }
         state.note.subject = state.subject;
         state.note.text = state.text;
+        state.note.status = noteStatus(action.name);
         if (state.note.date === state.patient.referenceDate) {
             const subjectKey = Object.keys(state.patient.additionalInfo).find(key => key.toLowerCase() === 'emne') ?? 'Emne';
             state.patient.additionalInfo[subjectKey] = state.subject;
@@ -249,13 +269,13 @@ const saveNote = async () => {
 const additionalInfoForPatient = async (patient) => {
     const patientId = String(patient?.id ?? '');
     if (!/^\d+$/.test(patientId)) return { additionalInfo: {}, referenceDate: null, notes: [] };
-    const url = `/api/nexus/patients/${patientId}/pathways/flatReferences?filterId=749`;
+    const url = `/api/nexus/patients/${patientId}/pathways/flatReferences?filterId=${referenceFilterId}`;
     try {
         const response = await fetch(url);
         if (!response.ok) return { additionalInfo: {}, referenceDate: null, notes: [] };
         const references = await response.json();
         if (!Array.isArray(references)) return { additionalInfo: {}, referenceDate: null, notes: [] };
-        const sourceUrl = new URL(`patients/${patientId}/pathways/flatReferences?filterId=749`, new URL('./', preferencesUrl));
+        const sourceUrl = new URL(`patients/${patientId}/pathways/flatReferences?filterId=${referenceFilterId}`, new URL('./', preferencesUrl));
         const notes = references.map(entry => {
             const parsedDate = Date.parse(String(entry?.date ?? '').replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
             const fields = Object.fromEntries((Array.isArray(entry?.additionalInfo) ? entry.additionalInfo : [])
@@ -263,6 +283,7 @@ const additionalInfoForPatient = async (patient) => {
                 .map(({ key, value }) => [key.trim().replace(/:+$/, '').toLowerCase(), value ?? '']));
             return {
                 subject: fields.emne ?? '', text: fields.tekst ?? '',
+                status: noteStatus(entry?.status) || noteStatus(entry?.state) || noteStatus(fields.status) || noteStatus(fields.tilstand),
                 date: Number.isFinite(parsedDate) ? parsedDate : null,
                 referencedObjectHref: entry?._links?.referencedObject?.href,
                 sourceHref: new URL(entry?._links?.self?.href ?? sourceUrl.href, sourceUrl).href,
@@ -476,18 +497,24 @@ onMounted(loadCitizenLists);
                                             <th scope="col">Emne</th>
                                             <th scope="col">Tekst</th>
                                             <th scope="col">Tid</th>
+                                            <th scope="col">Status</th>
                                             <th scope="col"><span class="visually-hidden">Rediger</span></th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <tr v-if="editingNoteKey === `${index}:new`" class="note-editor-row">
-                                            <td colspan="4">
+                                            <td colspan="5">
                                                 <p v-if="editLoading" role="status">Henter sagsnotat…</p>
                                                 <form v-else-if="editState" class="note-editor" @submit.prevent="saveNote">
                                                     <label :for="`new-note-subject-${index}`">Emne</label>
                                                     <input :id="`new-note-subject-${index}`" v-model="editState.subject" type="text" required>
                                                     <label :for="`new-note-text-${index}`">Tekst</label>
                                                     <textarea :id="`new-note-text-${index}`" v-model="editState.text" required></textarea>
+                                                    <label :for="`new-note-status-${index}`">Status</label>
+                                                    <select :id="`new-note-status-${index}`" v-model.number="editState.actionIndex" required>
+                                                        <option value="" disabled>Vælg status</option>
+                                                        <option v-for="(action, actionIndex) in editState.actions" :key="action.id" :value="actionIndex">{{ action.name }}</option>
+                                                    </select>
                                                     <div class="note-editor-actions">
                                                         <button type="submit" :disabled="!editChanged || editSaving">{{ editSaving ? 'Gemmer…' : 'Gem' }}</button>
                                                         <button type="button" :disabled="editSaving" @click="cancelEdit">Annuller</button>
@@ -498,12 +525,13 @@ onMounted(loadCitizenLists);
                                             </td>
                                         </tr>
                                         <template v-for="(note, noteIndex) in patient.notes" :key="noteIndex">
-                                        <tr :class="{ editing: editingNoteKey === `${index}:${noteIndex}` }">
+                                        <tr :class="{ editing: editingNoteKey === `${index}:${noteIndex}`, draft: note.status === 'Kladde', locked: note.status === 'Låst' }">
                                             <td>{{ note.subject }}</td>
                                             <td class="note-text">{{ note.text }}</td>
                                             <td class="single-line">{{ formatTime(note.date) }}</td>
+                                            <td>{{ note.status }}</td>
                                             <td class="row-action">
-                                                <button type="button" class="icon-button" :disabled="!note.referencedObjectHref || editSaving"
+                                                <button type="button" class="icon-button" :disabled="!note.referencedObjectHref || note.status === 'Låst' || editSaving"
                                                     aria-label="Rediger sagsnote" title="Rediger sagsnote"
                                                     @click="editNote(patient, note, index, noteIndex)">
                                                     <Pencil aria-hidden="true" />
@@ -511,13 +539,18 @@ onMounted(loadCitizenLists);
                                             </td>
                                         </tr>
                                         <tr v-if="editingNoteKey === `${index}:${noteIndex}`" class="note-editor-row">
-                                            <td colspan="4">
+                                            <td colspan="5">
                                                 <p v-if="editLoading" role="status">Henter sagsnote…</p>
                                                 <form v-else-if="editState" class="note-editor" @submit.prevent="saveNote">
                                                     <label :for="`note-subject-${index}-${noteIndex}`">Emne</label>
                                                     <input :id="`note-subject-${index}-${noteIndex}`" v-model="editState.subject" type="text">
                                                     <label :for="`note-text-${index}-${noteIndex}`">Tekst</label>
                                                     <textarea :id="`note-text-${index}-${noteIndex}`" v-model="editState.text"></textarea>
+                                                    <label :for="`note-status-${index}-${noteIndex}`">Status</label>
+                                                    <select :id="`note-status-${index}-${noteIndex}`" v-model.number="editState.actionIndex" required>
+                                                        <option value="" disabled>Vælg status</option>
+                                                        <option v-for="(action, actionIndex) in editState.actions" :key="action.id ?? actionIndex" :value="actionIndex">{{ action.name }}</option>
+                                                    </select>
                                                     <div class="note-editor-actions">
                                                         <button type="submit" :disabled="!editChanged || editSaving">{{ editSaving ? 'Gemmer…' : 'Gem' }}</button>
                                                         <button type="button" :disabled="editSaving" @click="cancelEdit">Annuller</button>
@@ -697,9 +730,18 @@ onMounted(loadCitizenLists);
         width: 14rem;
     }
     .notes-table th:nth-child(4) {
+        width: 8rem;
+    }
+    .notes-table th:nth-child(5) {
         width: 5.5rem;
     }
     .notes-table tbody tr.editing {
+        font-weight: 700;
+    }
+    .notes-table tbody tr.draft {
+        font-style: italic;
+    }
+    .notes-table tbody tr.locked {
         font-weight: 700;
     }
     .note-text {
@@ -712,7 +754,7 @@ onMounted(loadCitizenLists);
         display: block;
         margin-bottom: 0.4rem;
     }
-    .note-editor input {
+    .note-editor input, .note-editor select {
         display: block;
         width: min(100%, 32rem);
     }
