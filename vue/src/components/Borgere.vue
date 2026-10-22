@@ -8,6 +8,7 @@ const citizenLists = ref([]);
 const selectedId = ref('');
 const patientRecords = ref([]);
 const allPatientRecords = ref(null);
+const latestNoteDatesLoaded = ref(false);
 const pageSizes = ref([]);
 const pages = ref([]);
 const currentPageIndex = ref(0);
@@ -71,13 +72,18 @@ const formatTime = (timestamp) => {
 const formatDate = (value) => {
     if (!value) return '';
     const timestamp = Date.parse(value);
-    return formatTime(timestamp);
+    if (!Number.isFinite(timestamp)) return '';
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('da-DK', {
+        timeZone: 'Europe/Copenhagen', day: '2-digit', month: '2-digit', year: '2-digit',
+    }).formatToParts(timestamp).map(({ type, value }) => [type, value]));
+    return `${parts.day}/${parts.month}/${parts.year}`;
 };
 const sortValue = (patient, field) => {
     switch (field) {
         case 'identifier': return patient.patientIdentifier?.identifier;
         case 'name': return patient.fullReversedName;
         case 'deceasedDate': return patient.deceasedDate ? Date.parse(patient.deceasedDate) : null;
+        case 'referenceDate': return patient.referenceDate;
     }
 };
 const sortRecords = (records) => {
@@ -114,6 +120,33 @@ const sortBy = async (field) => {
             if (requestId !== selectionRequest) return;
             allPatientRecords.value = recordsByPage.flat();
             pageSizes.value = recordsByPage.map(records => records.length);
+        } catch (cause) {
+            if (requestId === selectionRequest) error.value = cause.message;
+            return;
+        } finally {
+            if (requestId === selectionRequest) fetching.value = false;
+        }
+    }
+    if (field === 'referenceDate' && allPatientRecords.value && !latestNoteDatesLoaded.value) {
+        const requestId = ++selectionRequest;
+        error.value = '';
+        fetching.value = true;
+        try {
+            const visibleDates = new Map(patientRecords.value.map(patient => [String(patient.id), patient.referenceDate]));
+            const records = allPatientRecords.value;
+            const dates = new Array(records.length);
+            let nextRecord = 0;
+            await Promise.all(Array.from({ length: Math.min(4, records.length) }, async () => {
+                while (nextRecord < records.length && requestId === selectionRequest) {
+                    const index = nextRecord++;
+                    const patient = records[index];
+                    dates[index] = visibleDates.has(String(patient.id))
+                        ? visibleDates.get(String(patient.id)) : await fetchLatestNoteDate(patient);
+                }
+            }));
+            if (requestId !== selectionRequest) return;
+            records.forEach((patient, index) => { patient.referenceDate = dates[index]; });
+            latestNoteDatesLoaded.value = true;
         } catch (cause) {
             if (requestId === selectionRequest) error.value = cause.message;
             return;
@@ -317,14 +350,20 @@ const saveNote = async () => {
             if (refreshed.notes.length > existingCount && createdNote) {
                 createdNote.status ||= noteStatus(action.name);
                 Object.assign(state.patient, refreshed);
+                const cachedPatient = allPatientRecords.value?.find(patient => patient.id === state.patient.id);
+                if (cachedPatient) cachedPatient.referenceDate = state.patient.referenceDate;
                 cancelEdit();
+                if (sortField.value === 'referenceDate' && cachedPatient) await fetchPatientPage(currentPageIndex.value);
                 return;
             }
             const date = Date.now();
             state.patient.notes.unshift({ subject: state.subject, text: state.text, status: noteStatus(action.name), date });
             state.patient.referenceDate = date;
             state.patient.additionalInfo.Emne = state.subject;
+            const cachedPatient = allPatientRecords.value?.find(patient => patient.id === state.patient.id);
+            if (cachedPatient) cachedPatient.referenceDate = date;
             cancelEdit();
+            if (sortField.value === 'referenceDate' && cachedPatient) await fetchPatientPage(currentPageIndex.value);
             return;
         }
         state.note.subject = state.subject;
@@ -342,6 +381,29 @@ const saveNote = async () => {
     }
 };
 
+const parseReferenceDate = (entry) => {
+    const date = Date.parse(String(entry?.date ?? '').replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
+    return Number.isFinite(date) ? date : null;
+};
+
+const latestReference = (references) => references.reduce((newest, entry) => {
+    const date = parseReferenceDate(entry);
+    return date != null && (!newest || date > newest.date) ? { entry, date } : newest;
+}, null);
+
+const fetchLatestNoteDate = async (patient) => {
+    const patientId = String(patient?.id ?? '');
+    if (!/^\d+$/.test(patientId)) return null;
+    try {
+        const response = await fetch(`/api/nexus/patients/${patientId}/pathways/flatReferences?filterId=${referenceFilterId}`);
+        if (!response.ok) return null;
+        const references = await response.json();
+        return Array.isArray(references) ? latestReference(references)?.date ?? null : null;
+    } catch {
+        return null;
+    }
+};
+
 const additionalInfoForPatient = async (patient) => {
     const patientId = String(patient?.id ?? '');
     if (!/^\d+$/.test(patientId)) return { additionalInfo: {}, referenceDate: null, notes: [] };
@@ -353,22 +415,19 @@ const additionalInfoForPatient = async (patient) => {
         if (!Array.isArray(references)) return { additionalInfo: {}, referenceDate: null, notes: [] };
         const sourceUrl = new URL(`patients/${patientId}/pathways/flatReferences?filterId=${referenceFilterId}`, new URL('./', preferencesUrl));
         const notes = references.map(entry => {
-            const parsedDate = Date.parse(String(entry?.date ?? '').replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
+            const parsedDate = parseReferenceDate(entry);
             const fields = Object.fromEntries((Array.isArray(entry?.additionalInfo) ? entry.additionalInfo : [])
                 .filter(item => item?.type === 'keyValue' && typeof item.key === 'string' && item.key.trim())
                 .map(({ key, value }) => [key.trim().replace(/:+$/, '').toLowerCase(), value ?? '']));
             return {
                 subject: fields.emne ?? '', text: fields.tekst ?? '',
                 status: noteStatus(entry?.workflowState),
-                date: Number.isFinite(parsedDate) ? parsedDate : null,
+                date: parsedDate,
                 referencedObjectHref: entry?._links?.referencedObject?.href,
                 sourceHref: new URL(entry?._links?.self?.href ?? sourceUrl.href, sourceUrl).href,
             };
         }).sort((first, second) => (second.date ?? -Infinity) - (first.date ?? -Infinity));
-        const latest = references.reduce((newest, entry) => {
-            const date = Date.parse(String(entry?.date ?? '').replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
-            return Number.isFinite(date) && (!newest || date > newest.date) ? { entry, date } : newest;
-        }, null);
+        const latest = latestReference(references);
         if (!Array.isArray(latest?.entry?.additionalInfo)) return { additionalInfo: {}, referenceDate: latest?.date ?? null, notes };
         return { referenceDate: latest.date, additionalInfo: Object.fromEntries(latest.entry.additionalInfo
             .filter(item => item?.type === 'keyValue' && typeof item.key === 'string' && item.key.trim())
@@ -459,6 +518,7 @@ const fetchSelected = async () => {
     cancelEdit();
     patientRecords.value = [];
     allPatientRecords.value = null;
+    latestNoteDatesLoaded.value = false;
     pageSizes.value = [];
     sortField.value = '';
     sortDirection.value = 'ascending';
@@ -545,14 +605,18 @@ onMounted(loadCitizenLists);
                         </th>
                         <th v-for="column in otherColumns" :key="column.field" scope="col" :class="column.className">{{ column.label }}</th>
                         <th v-for="key in additionalInfoKeys" :key="key" scope="col">{{ key }}</th>
-                        <th scope="col" class="single-line">Sidste notat</th>
+                        <th scope="col" class="single-line" :aria-sort="sortField === 'referenceDate' ? sortDirection : undefined">
+                            <button type="button" class="sort-header" :disabled="editSaving || fetching" @click="sortBy('referenceDate')">
+                                Sidste notat <component :is="sortIcon('referenceDate')" aria-hidden="true" />
+                            </button>
+                        </th>
                         <th scope="col" class="row-action"><span class="visually-hidden">Sagsnoter</span></th>
                     </tr>
                 </thead>
                 <tbody>
                     <template v-for="(patient, index) in sortedPatientRecords" :key="patient.id ?? index">
                     <tr class="patient-row" :class="{ expanded: expandedPatient === patient }" @click="toggleRow(patient)">
-                        <td class="single-line">{{ formatDate(patient.deceasedDate) }}</td>
+                        <td class="single-line">{{ formatDate(patient.deceasedDate) || '-' }}</td>
                         <td class="single-line">{{ patient.patientIdentifier?.identifier }}</td>
                         <td><span class="name-text">{{ patient.fullReversedName }}</span></td>
                         <td><span class="address-text">{{ formatAddress(patient.currentAddress) }}</span></td>
@@ -562,7 +626,7 @@ onMounted(loadCitizenLists);
                         <td v-for="key in additionalInfoKeys" :key="key">
                             <span class="clamped extra-text">{{ patient.additionalInfo?.[key] }}</span>
                         </td>
-                        <td class="single-line">{{ formatTime(patient.referenceDate) }}</td>
+                        <td class="single-line">{{ formatTime(patient.referenceDate) || '-' }}</td>
                         <td class="row-action">
                             <button type="button" class="icon-button" :disabled="editSaving" :aria-expanded="expandedPatient === patient"
                                 :aria-controls="`patient-notes-${index}`" :aria-label="`${expandedPatient === patient ? 'Skjul' : 'Vis'} sagsnoter for ${patient.fullReversedName}`"
