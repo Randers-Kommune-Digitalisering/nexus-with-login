@@ -32,9 +32,6 @@ const sortableColumns = [
 ];
 const otherColumns = [
     { field: 'address', label: 'Adresse' },
-    { field: 'homePhoneNumber', label: 'Hjemme', className: 'phone-column' },
-    { field: 'mobilePhoneNumber', label: 'Mobil', className: 'phone-column' },
-    { field: 'workPhoneNumber', label: 'Arbejde', className: 'phone-column' },
 ];
 const editChanged = computed(() => {
     const state = editState.value;
@@ -626,9 +623,6 @@ onMounted(loadCitizenLists);
                         <td class="single-line">{{ patient.patientIdentifier?.identifier }}</td>
                         <td><span class="name-text">{{ patient.fullReversedName }}</span></td>
                         <td><span class="address-text">{{ formatAddress(patient.currentAddress) }}</span></td>
-                        <td class="phone-column">{{ patient.homePhoneNumber }}</td>
-                        <td class="phone-column">{{ patient.mobilePhoneNumber }}</td>
-                        <td class="phone-column">{{ patient.workPhoneNumber }}</td>
                         <td v-for="key in additionalInfoKeys" :key="key">
                             <span class="clamped extra-text" :class="{ 'subject-text': key.toLowerCase() === 'emne' }">{{ patient.additionalInfo?.[key] }}</span>
                         </td>
@@ -643,7 +637,7 @@ onMounted(loadCitizenLists);
                         </td>
                     </tr>
                     <tr v-if="expandedPatient === patient" :id="`patient-notes-${index}`" class="notes-row">
-                        <td :colspan="9 + additionalInfoKeys.length">
+                        <td :colspan="6 + additionalInfoKeys.length">
                             <div class="notes-panel card randers">
                                 <div class="header notes-header">
                                     <button type="button" class="add-note" :disabled="editSaving || editingNoteKey === `${index}:new`" @click="addNote(patient, index)">
@@ -835,12 +829,6 @@ onMounted(loadCitizenLists);
     .address-text {
         display: block;
         width: 16rem;
-        overflow-wrap: anywhere;
-    }
-    .phone-column {
-        width: 11rem;
-        max-width: 11rem;
-        white-space: normal;
         overflow-wrap: anywhere;
     }
     .subject-column, .subject-text {
