@@ -65,13 +65,16 @@ def current_access_token():
         logger.warning('Token refresh response was not valid JSON')
         raise TokenRefreshUnavailable from exc
 
-    if (not isinstance(refreshed, dict)
-            or not isinstance(refreshed.get('access_token'), str)
-            or not refreshed['access_token']
-            or not isinstance(refreshed.get('expires_in'), (int, float))
-            or isinstance(refreshed['expires_in'], bool)
-            or not math.isfinite(refreshed['expires_in'])
-            or refreshed['expires_in'] <= 0):
+    if not isinstance(refreshed, dict):
+        logger.warning('Token refresh response was missing required fields')
+        raise TokenRefreshUnavailable
+
+    access_token = refreshed.get('access_token')
+    expires_in = refreshed.get('expires_in')
+    valid_expiry = isinstance(expires_in, (int, float)) and not isinstance(expires_in, bool)
+    if valid_expiry:
+        valid_expiry = math.isfinite(expires_in) and expires_in > 0
+    if not isinstance(access_token, str) or not access_token or not valid_expiry:
         logger.warning('Token refresh response was missing required fields')
         raise TokenRefreshUnavailable
 
@@ -84,9 +87,9 @@ def current_access_token():
         **token,
         **refreshed,
         'refresh_token': new_refresh_token,
-        'expires_at': started_at + refreshed['expires_in'],
+        'expires_at': started_at + expires_in,
     }
-    return refreshed['access_token']
+    return access_token
 
 
 def add_user_handling(app):
