@@ -30,6 +30,14 @@ Nexus home resource. Other HAL links under
 URL of the response that supplied them, then send the path and query to the local
 proxy. Flask keeps the user's access token in its session and sends it to Nexus;
 never put the client secret or access token in Vue.
+Before a Nexus request, Flask renews an access token nearing expiry using the
+refresh token stored in its server-side session. A rotated refresh token replaces
+the previous one. If Keycloak rejects renewal or the refresh token is unavailable,
+the user must log in again; transient provider failures return an error without
+sending the Nexus request. Keycloak's session and refresh-token limits still apply.
+Use HTTPS for `APP_URL` in production so session cookies are marked Secure;
+cookies are HttpOnly and SameSite=Lax. Protect the server-side session store,
+which contains refresh tokens.
 
 The default Nexus origin is set by `BASE_URL` and its API prefix by `BASE_PATH`.
 Set them in the app environment when targeting a different Nexus installation;

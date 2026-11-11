@@ -5,6 +5,7 @@ import requests
 from utils.config import MAX_WRITE_BYTES, BASE_URL, BASE_PATH, ALLOWED_CITIZEN_LIST_IDS
 
 from flask import Blueprint, Response, jsonify, request, session
+from user_handling import TokenRefreshUnavailable, current_access_token
 
 logger = logging.getLogger(__name__)
 api_endpoints = Blueprint('api', __name__, url_prefix='/api')
@@ -51,8 +52,7 @@ def nexus_request(resource):
     ) for segment in segments):
         return jsonify(error='Invalid Nexus path'), 400
 
-    token = session.get('token', {}).get('access_token')
-    if not token:
+    if not session.get('token', {}).get('access_token'):
         return jsonify(error='Unauthorized'), 401
 
     if request.method in ('POST', 'PUT'):
@@ -62,6 +62,13 @@ def nexus_request(resource):
             return jsonify(error='Invalid CSRF token'), 403
         if request.content_length is None or request.content_length > MAX_WRITE_BYTES:
             return jsonify(error='Invalid request size'), 413
+
+    try:
+        token = current_access_token()
+    except TokenRefreshUnavailable:
+        return jsonify(error='Authentication provider unavailable'), 502
+    if not token:
+        return jsonify(error='Unauthorized'), 401
 
     headers = {'Authorization': f'Bearer {token}'}
     for name in ('Accept', 'Content-Type', 'If-Match', 'If-None-Match'):
