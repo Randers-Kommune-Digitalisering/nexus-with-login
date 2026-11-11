@@ -39,6 +39,11 @@ Note text, patient records, and unsaved edits are never stored in browser storag
 Without a saved selection, the first allowed citizen list opens automatically.
 When creating a note, `Kladde` is preselected if Nexus offers that action;
 otherwise the user must choose a status.
+After a create request, the UI only shows a new note if the follow-up Nexus read
+finds it. Otherwise it keeps the editor open with a bold red Danish error and
+disables another save until the user checks Nexus and cancels, avoiding an
+accidental duplicate submission. Successful saves show no message. Unsaved
+note text remains only in the current page.
 Before a Nexus request, Flask renews an access token nearing expiry using the
 refresh token stored in its server-side session. A rotated refresh token replaces
 the previous one. If Keycloak rejects renewal or the refresh token is unavailable,

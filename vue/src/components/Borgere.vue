@@ -47,7 +47,7 @@ watch([selectedId, sortField, sortDirection, currentPageIndex, expandedPatient],
 }, { flush: 'sync' });
 const editChanged = computed(() => {
     const state = editState.value;
-    if (!state) return false;
+    if (!state || state.saveUnconfirmed) return false;
     if (!state.actionIndex && state.actionIndex !== 0) return false;
     if (state.mode === 'create') return Boolean(state.subject.trim() && state.text.trim());
     return state.subject !== state.originalSubject || state.text !== state.originalText
@@ -363,21 +363,15 @@ const saveNote = async () => {
             const existingCount = state.patient.notes.length;
             const refreshed = await additionalInfoForPatient(state.patient);
             const createdNote = refreshed.notes.find(note => note.subject === state.subject && note.text === state.text);
-            if (refreshed.notes.length > existingCount && createdNote) {
-                createdNote.status ||= noteStatus(action.name);
-                Object.assign(state.patient, refreshed);
-                const cachedPatient = allPatientRecords.value?.find(patient => patient.id === state.patient.id);
-                if (cachedPatient) cachedPatient.referenceDate = state.patient.referenceDate;
-                cancelEdit();
-                if (sortField.value === 'referenceDate' && cachedPatient) await fetchPatientPage(currentPageIndex.value);
-                return;
+            if (refreshed.notes.length <= existingCount || !createdNote) {
+                state.saveUnconfirmed = true;
+                failureMessage = 'Fejl: Sagsnotatet kunne ikke bekræftes gemt.';
+                throw new Error('Unconfirmed note creation');
             }
-            const date = Date.now();
-            state.patient.notes.unshift({ subject: state.subject, text: state.text, status: noteStatus(action.name), date });
-            state.patient.referenceDate = date;
-            state.patient.additionalInfo.Emne = state.subject;
+            createdNote.status ||= noteStatus(action.name);
+            Object.assign(state.patient, refreshed);
             const cachedPatient = allPatientRecords.value?.find(patient => patient.id === state.patient.id);
-            if (cachedPatient) cachedPatient.referenceDate = date;
+            if (cachedPatient) cachedPatient.referenceDate = state.patient.referenceDate;
             cancelEdit();
             if (sortField.value === 'referenceDate' && cachedPatient) await fetchPatientPage(currentPageIndex.value);
             return;
@@ -717,7 +711,7 @@ onMounted(loadCitizenLists);
                                                         <button type="button" :disabled="editSaving" @click="cancelEdit">Annuller</button>
                                                     </div>
                                                 </form>
-                                                <p v-if="editError" role="alert">{{ editError }}</p>
+                                                <p v-if="editError" class="note-error" role="alert">{{ editError }}</p>
                                                 <button v-if="!editState && !editSaving" type="button" @click="cancelEdit">Annuller</button>
                                             </td>
                                         </tr>
@@ -753,7 +747,7 @@ onMounted(loadCitizenLists);
                                                         <button type="button" :disabled="editSaving" @click="cancelEdit">Annuller</button>
                                                     </div>
                                                 </form>
-                                                <p v-if="editError" role="alert">{{ editError }}</p>
+                                                <p v-if="editError" class="note-error" role="alert">{{ editError }}</p>
                                             </td>
                                         </tr>
                                         </template>
@@ -1015,6 +1009,10 @@ onMounted(loadCitizenLists);
     }
     .note-editor-actions button {
         margin: 0;
+    }
+    .note-error {
+        color: var(--color-red);
+        font-weight: 700;
     }
     .pagination {
         display: flex;
