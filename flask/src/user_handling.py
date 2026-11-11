@@ -50,7 +50,9 @@ def add_user_handling(app):
     @user_endpoints.route('/auth', methods=['GET'])
     def auth():
         # Handle the callback from the OpenID provider - adds token to session - then redirects to base url
-        session['token'] = oauth.openid.authorize_access_token()
+        token = oauth.openid.authorize_access_token()
+        logger.info('Refresh token returned: %s', bool(token.get('refresh_token')))
+        session['token'] = token
         return redirect('/')
 
     # @user_endpoints.route('/profile', methods=['GET'])
