@@ -24,6 +24,42 @@ def test_healthz(client):
     assert response.get_json()['status'] == 'success'
 
 
+def test_session_status_anonymous_does_not_fetch_nexus(client):
+    with patch('api_endpoints.requests.request') as nexus:
+        response = client.get('/user/session')
+        assert response.status_code == 200
+        assert response.get_json() == {'authenticated': False}
+        assert response.headers['Cache-Control'] == 'no-store'
+        nexus.assert_not_called()
+
+
+def test_session_status_valid_token(client):
+    with client.session_transaction() as session:
+        session['token'] = {'access_token': 'valid-access', 'expires_at': 1100}
+
+    with patch('user_handling.time.time', return_value=1000), \
+            patch('api_endpoints.requests.request') as nexus:
+        response = client.get('/user/session')
+        assert response.get_json() == {'authenticated': True}
+        nexus.assert_not_called()
+
+
+def test_session_status_expired_refresh_token(client):
+    with client.session_transaction() as session:
+        session['token'] = {
+            'access_token': 'old-access',
+            'refresh_token': 'old-refresh',
+            'expires_at': 1000,
+        }
+
+    with patch('user_handling.time.time', return_value=1000), \
+            patch('user_handling.requests.post', return_value=Mock(status_code=400)), \
+            patch('api_endpoints.requests.request') as nexus:
+        response = client.get('/user/session')
+        assert response.get_json() == {'authenticated': False}
+        nexus.assert_not_called()
+
+
 def test_nexus_refreshes_expiring_token(client):
     with client.session_transaction() as session:
         session['token'] = {

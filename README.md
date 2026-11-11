@@ -23,7 +23,9 @@ App der håndterer log ind / brygerstyring til Nexus og viser brugerdefineret in
 
 ## Nexus API from Vue
 
-After login, Vue calls Flask on the same origin. `GET /api/home-ressource` fetches the
+Vue checks `GET /user/session` on page load; it returns only an authentication
+boolean and does not cache the response. Only authenticated sessions request
+`GET /api/home-ressource` to fetch the
 Nexus home resource. Other HAL links under
 `https://randers.nexus.kmd.dk/api/core/mobile/randers/v2/` can be requested through
 `/api/nexus/<path>` with GET, POST, or PUT. Resolve relative links against the Nexus

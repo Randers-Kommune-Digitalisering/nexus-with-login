@@ -3,7 +3,7 @@ import math
 import time
 import requests
 
-from flask import Blueprint, redirect, url_for, request, session
+from flask import Blueprint, jsonify, redirect, url_for, request, session
 from authlib.integrations.flask_client import OAuth
 from flask_session import Session
 
@@ -89,6 +89,7 @@ def current_access_token():
         'refresh_token': new_refresh_token,
         'expires_at': started_at + expires_in,
     }
+    logger.info('Keycloak refresh token expires in %s seconds after renewal', refreshed.get('refresh_expires_in'))
     return access_token
 
 
@@ -119,10 +120,23 @@ def add_user_handling(app):
         # Always allow access to assets (e.g. css, js, images)
         if request.path.startswith('/assets/'):
             pass
-        elif 'token' not in session and request.path not in ['/user/login', '/user/auth', '/healthz', '/metrics', '/']:
+        elif 'token' not in session and request.path not in ['/user/login', '/user/auth', '/user/session', '/healthz', '/metrics', '/']:
             return {"error": "Unauthorized"}, 401
 
     user_endpoints = Blueprint('user', __name__, url_prefix='/user')
+
+    @user_endpoints.route('/session', methods=['GET'])
+    def session_status():
+        if not session.get('token'):
+            authenticated = False
+        else:
+            try:
+                authenticated = bool(current_access_token())
+            except TokenRefreshUnavailable:
+                return jsonify(error='Authentication provider unavailable'), 502
+        response = jsonify(authenticated=authenticated)
+        response.headers['Cache-Control'] = 'no-store'
+        return response
 
     @user_endpoints.route('/login', methods=['GET'])
     def login():

@@ -8,8 +8,22 @@ const userName = ref(null);
 const loginError = ref('');
 
 const checkLogin = () => {
-    fetch('/api/home-ressource')
+    fetch('/user/session')
         .then(response => {
+            if (!response.ok) throw new Error('Session status unavailable');
+            return response.json();
+        })
+        .then(({ authenticated }) => {
+            if (!authenticated) {
+                isLoggedIn.value = false;
+                userName.value = null;
+                emit('session-change', null);
+                return null;
+            }
+            return fetch('/api/home-ressource');
+        })
+        .then(response => {
+            if (!response) return null;
             if (response.status === 401) {
                 isLoggedIn.value = false;
                 userName.value = null;
