@@ -89,7 +89,6 @@ def current_access_token():
         'refresh_token': new_refresh_token,
         'expires_at': started_at + expires_in,
     }
-    logger.info('Keycloak refresh token expires in %s seconds after renewal', refreshed.get('refresh_expires_in'))
     return access_token
 
 
@@ -150,7 +149,6 @@ def add_user_handling(app):
     def auth():
         # Handle the callback from the OpenID provider - adds token to session - then redirects to base url
         token = oauth.openid.authorize_access_token()
-        logger.info('Keycloak refresh token expires in %s seconds', token.get('refresh_expires_in'))
         session['token'] = token
         return redirect('/')
 

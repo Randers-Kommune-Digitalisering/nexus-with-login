@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue';
 import Content from './Content.vue';
+import { citizenListViewKey } from '../viewState';
 
 const emit = defineEmits(['session-change']);
 const isLoggedIn = ref(false);
@@ -15,6 +16,7 @@ const checkLogin = () => {
         })
         .then(({ authenticated }) => {
             if (!authenticated) {
+                sessionStorage.removeItem(citizenListViewKey);
                 isLoggedIn.value = false;
                 userName.value = null;
                 emit('session-change', null);
@@ -25,6 +27,7 @@ const checkLogin = () => {
         .then(response => {
             if (!response) return null;
             if (response.status === 401) {
+                sessionStorage.removeItem(citizenListViewKey);
                 isLoggedIn.value = false;
                 userName.value = null;
                 emit('session-change', null);
@@ -47,6 +50,7 @@ const loginLogout = () => {
         fetch('/user/logout')
             .then(response => {
                 if (response.status === 200) {
+                    sessionStorage.removeItem(citizenListViewKey);
                     isLoggedIn.value = false;
                     userName.value = null;
                     emit('session-change', null);
@@ -54,6 +58,7 @@ const loginLogout = () => {
                 }
             });
     } else {
+        sessionStorage.removeItem(citizenListViewKey);
         window.location.href = '/user/login';
     }
 };

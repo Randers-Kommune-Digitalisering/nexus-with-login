@@ -32,6 +32,13 @@ Nexus home resource. Other HAL links under
 URL of the response that supplied them, then send the path and query to the local
 proxy. Flask keeps the user's access token in its session and sends it to Nexus;
 never put the client secret or access token in Vue.
+The browser tab remembers the selected list, sort order, page, and expanded
+patient ID in `sessionStorage`, restoring them only after fresh Nexus data loads.
+It clears this view state on logout or when the session is no longer authenticated.
+Note text, patient records, and unsaved edits are never stored in browser storage.
+Without a saved selection, the first allowed citizen list opens automatically.
+When creating a note, `Kladde` is preselected if Nexus offers that action;
+otherwise the user must choose a status.
 Before a Nexus request, Flask renews an access token nearing expiry using the
 refresh token stored in its server-side session. A rotated refresh token replaces
 the previous one. If Keycloak rejects renewal or the refresh token is unavailable,

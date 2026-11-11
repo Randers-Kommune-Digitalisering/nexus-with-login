@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onMounted, ref, toRaw } from 'vue';
+import { computed, onMounted, ref, toRaw, watch } from 'vue';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronUp, Pencil, Plus } from '@lucide/vue';
 import { noteFormDefinitionId, programPathwayId, referenceFilterId } from '../nexusConfig';
+import { citizenListViewKey, readCitizenListView, saveCitizenListView } from '../viewState';
 
 const props = defineProps({ homeResource: { type: Object, required: true } });
 const citizenLists = ref([]);
@@ -33,6 +34,17 @@ const sortableColumns = [
 const otherColumns = [
     { field: 'address', label: 'Adresse' },
 ];
+let savedView = readCitizenListView(sessionStorage);
+watch([selectedId, sortField, sortDirection, currentPageIndex, expandedPatient], () => {
+    const patientId = expandedPatient.value?.id;
+    saveCitizenListView(sessionStorage, {
+        listId: selectedId.value,
+        sortField: sortField.value,
+        sortDirection: sortDirection.value,
+        pageIndex: currentPageIndex.value,
+        expandedPatientId: patientId != null && /^\d+$/.test(String(patientId)) ? String(patientId) : null,
+    });
+}, { flush: 'sync' });
 const editChanged = computed(() => {
     const state = editState.value;
     if (!state) return false;
@@ -228,9 +240,10 @@ const addNote = async (patient, rowIndex) => {
             && /^\d+$/.test(String(action.id ?? '')));
         if (!actions.length) throw new Error('No available note actions');
         if (requestId !== editRequest) return;
+        const draftIndex = actions.findIndex(action => noteStatus(action.name) === 'Kladde');
         editState.value = {
             mode: 'create', form: prototype, patient, prototypeUrl: prototypeLink.url,
-            actions, actionIndex: '',
+            actions, actionIndex: draftIndex < 0 ? '' : draftIndex,
             subject: String(subject.value ?? ''), text: String(text.value ?? ''),
         };
     } catch {
@@ -447,7 +460,10 @@ const loadCitizenLists = async () => {
         const { allowedCitizenListIds } = await configResponse.json();
         const allowedIds = new Set((allowedCitizenListIds || '')
             .split(',').map(id => id.trim()).filter(id => /^\d+$/.test(id)));
-        if (!allowedIds.size) return;
+        if (!allowedIds.size) {
+            sessionStorage.removeItem(citizenListViewKey);
+            return;
+        }
 
         preferencesUrl = new URL(props.homeResource._links.preferences.href);
         if (preferencesUrl.protocol !== 'https:' || !preferencesUrl.pathname.endsWith('/preferences')) {
@@ -461,6 +477,33 @@ const loadCitizenLists = async () => {
         citizenLists.value = preferences.CITIZEN_LIST.map(({ id, name, _links }) => ({
             id: String(id), name, href: _links?.self?.href,
         })).filter(list => list.name && allowedIds.has(list.id));
+
+        if (savedView && !citizenLists.value.some(list => list.id === savedView.listId)) {
+            sessionStorage.removeItem(citizenListViewKey);
+            savedView = null;
+        }
+        if (!citizenLists.value.length) return;
+        selectedId.value = savedView?.listId ?? citizenLists.value[0].id;
+        await fetchSelected();
+        if (savedView && !error.value) {
+            if (savedView.sortField === 'referenceDate'
+                || sortableColumns.some(column => column.field === savedView.sortField)) {
+                await sortBy(savedView.sortField);
+                if (error.value) return;
+                if (savedView.sortDirection === 'descending') await sortBy(savedView.sortField);
+                if (error.value) return;
+            }
+            if (Number.isInteger(savedView.pageIndex) && savedView.pageIndex >= 0
+                && savedView.pageIndex < pages.value.length && savedView.pageIndex !== currentPageIndex.value) {
+                await fetchPatientPage(savedView.pageIndex);
+            }
+            if (error.value) return;
+            if (typeof savedView.expandedPatientId === 'string' && /^\d+$/.test(savedView.expandedPatientId)) {
+                expandedPatient.value = patientRecords.value.find(
+                    patient => String(patient.id) === savedView.expandedPatientId
+                ) ?? null;
+            }
+        }
     } catch (cause) {
         error.value = cause.message;
     } finally {
