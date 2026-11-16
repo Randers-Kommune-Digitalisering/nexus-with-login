@@ -26,7 +26,7 @@ def home_ressource():
 def citizen_list_config():
     if not session.get('token', {}).get('access_token'):
         return jsonify(error='Unauthorized'), 401
-    response = jsonify(allowedCitizenListIds=ALLOWED_CITIZEN_LIST_IDS)
+    response = jsonify(allowedCitizenListIds=ALLOWED_CITIZEN_LIST_IDS, nexusBaseUrl=BASE_URL)
     response.headers['Cache-Control'] = 'no-store'
     return response
 

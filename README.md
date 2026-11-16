@@ -38,7 +38,10 @@ It clears this view state on logout or when the session is no longer authenticat
 Note text, patient records, and unsaved edits are never stored in browser storage.
 Without a saved selection, the first allowed citizen list opens automatically.
 When creating a note, `Kladde` is preselected if Nexus offers that action;
-otherwise the user must choose a status.
+otherwise the user must choose a status. New notes start with the subject
+`Afslutning af borger`, which can be edited before saving. CPR and name in the
+citizen list link to the corresponding Nexus citizen page in a new tab; the
+link uses the configured `BASE_URL` and the citizen ID, not the CPR.
 After a create request, the UI only shows a new note if the follow-up Nexus read
 finds it. Otherwise it keeps the editor open with a bold red Danish error and
 disables another save until the user checks Nexus and cancels, avoiding an

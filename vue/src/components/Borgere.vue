@@ -6,6 +6,7 @@ import { citizenListViewKey, readCitizenListView, saveCitizenListView } from '..
 
 const props = defineProps({ homeResource: { type: Object, required: true } });
 const citizenLists = ref([]);
+const nexusBaseUrl = ref('');
 const selectedId = ref('');
 const patientRecords = ref([]);
 const allPatientRecords = ref(null);
@@ -175,6 +176,8 @@ const sortBy = async (field) => {
 };
 const sortIcon = (field) => sortField.value === field
     ? (sortDirection.value === 'ascending' ? ArrowUp : ArrowDown) : ArrowUpDown;
+const citizenHref = (patient) => /^\d+$/.test(String(patient?.id ?? ''))
+    ? `${nexusBaseUrl.value}/citizen/${patient.id}` : null;
 const noteStatus = (value) => {
     const name = typeof value === 'string' ? value : value?.name;
     if (typeof name !== 'string') return '';
@@ -244,7 +247,7 @@ const addNote = async (patient, rowIndex) => {
         editState.value = {
             mode: 'create', form: prototype, patient, prototypeUrl: prototypeLink.url,
             actions, actionIndex: draftIndex < 0 ? '' : draftIndex,
-            subject: String(subject.value ?? ''), text: String(text.value ?? ''),
+            subject: 'Afslutning af borger', text: String(text.value ?? ''),
         };
     } catch {
         if (requestId === editRequest) editError.value = 'Kunne ikke oprette sagsnotatet.';
@@ -451,7 +454,11 @@ const loadCitizenLists = async () => {
     try {
         const configResponse = await fetch('/api/citizen-list-config');
         if (!configResponse.ok) throw new Error(`Citizen list config: HTTP ${configResponse.status}`);
-        const { allowedCitizenListIds } = await configResponse.json();
+        const { allowedCitizenListIds, nexusBaseUrl: configuredBaseUrl } = await configResponse.json();
+        const baseUrl = new URL(configuredBaseUrl);
+        if (baseUrl.protocol !== 'https:' || baseUrl.pathname !== '/' || baseUrl.search || baseUrl.hash
+            || baseUrl.username || baseUrl.password) throw new Error('Invalid Nexus base URL');
+        nexusBaseUrl.value = baseUrl.origin;
         const allowedIds = new Set((allowedCitizenListIds || '')
             .split(',').map(id => id.trim()).filter(id => /^\d+$/.test(id)));
         if (!allowedIds.size) {
@@ -657,8 +664,16 @@ onMounted(loadCitizenLists);
                     <template v-for="(patient, index) in sortedPatientRecords" :key="patient.id ?? index">
                     <tr class="patient-row" :class="{ expanded: expandedPatient === patient }" @click="toggleRow(patient)">
                         <td class="single-line">{{ formatDate(patient.deceasedDate) || '-' }}</td>
-                        <td class="single-line">{{ patient.patientIdentifier?.identifier }}</td>
-                        <td><span class="name-text">{{ patient.fullReversedName }}</span></td>
+                        <td class="single-line">
+                            <a v-if="citizenHref(patient)" :href="citizenHref(patient)" target="_blank" rel="noopener noreferrer"
+                                @click.stop>{{ patient.patientIdentifier?.identifier }}</a>
+                            <template v-else>{{ patient.patientIdentifier?.identifier }}</template>
+                        </td>
+                        <td>
+                            <a v-if="citizenHref(patient)" :href="citizenHref(patient)" target="_blank" rel="noopener noreferrer"
+                                class="name-text" @click.stop>{{ patient.fullReversedName }}</a>
+                            <span v-else class="name-text">{{ patient.fullReversedName }}</span>
+                        </td>
                         <td><span class="address-text">{{ formatAddress(patient.currentAddress) }}</span></td>
                         <td v-for="key in additionalInfoKeys" :key="key">
                             <span class="clamped extra-text" :class="{ 'subject-text': key.toLowerCase() === 'emne' }">{{ patient.additionalInfo?.[key] }}</span>
