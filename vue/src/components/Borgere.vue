@@ -222,6 +222,7 @@ const addNote = async (patient, rowIndex) => {
     const requestId = editRequest;
     editingNoteKey.value = `${rowIndex}:new`;
     editLoading.value = true;
+    let failureMessage = 'Kunne ikke hente sagsnotatets formular.';
     try {
         const patientId = String(patient?.id ?? '');
         if (!/^\d+$/.test(patientId)) throw new Error('Invalid patient ID');
@@ -230,28 +231,47 @@ const addNote = async (patient, rowIndex) => {
             new URL('./', preferencesUrl),
         );
         const response = await fetch(prototypeLink.proxy);
-        if (!response.ok) throw new Error('Could not load prototype');
+        if (!response.ok) {
+            failureMessage = `Kunne ikke hente sagsnotatets formular (HTTP ${response.status}).`;
+            throw new Error('Could not load prototype');
+        }
         const prototype = await response.json();
+        failureMessage = 'Sagsnotatets formular mangler Emne: eller Tekst:.';
         const items = prototype?.items;
         const subject = Array.isArray(items) && items.find(item => item?.label === 'Emne:');
         const text = Array.isArray(items) && items.find(item => item?.label === 'Tekst:');
         if (!subject || !text) throw new Error('Missing note fields');
+        failureMessage = 'Sagsnotatets formular mangler forløbstilknytning.';
         if (!prototype.pathwayAssociation || typeof prototype.pathwayAssociation !== 'object') {
             throw new Error('Missing pathway association');
         }
+        failureMessage = 'Formularens link til tilgængelige forløb mangler eller er ugyldigt.';
         const pathwayLink = nexusLink(
             prototype.pathwayAssociation._links?.availablePathwayAssociation?.href, prototypeLink.url,
         );
+        failureMessage = 'Kunne ikke hente tilgængelige forløb.';
         const pathwayResponse = await fetch(pathwayLink.proxy);
-        if (!pathwayResponse.ok) throw new Error('Could not load pathway associations');
+        if (!pathwayResponse.ok) {
+            failureMessage = `Kunne ikke hente tilgængelige forløb (HTTP ${pathwayResponse.status}).`;
+            throw new Error('Could not load pathway associations');
+        }
+        failureMessage = 'Listen over tilgængelige forløb har et ugyldigt format.';
         const pathways = activeNotePathways(await pathwayResponse.json());
+        failureMessage = 'Hverken standardforløbet eller FSIII er aktivt for borgeren.';
         const selectedPathway = defaultNotePathway(pathways, programPathwayId);
         if (!selectedPathway) throw new Error('No eligible note pathway');
+        failureMessage = 'Formularens link til handlinger mangler eller er ugyldigt.';
         const actionsLink = nexusLink(prototype._links?.availableActions?.href, prototypeLink.url);
+        failureMessage = 'Kunne ikke hente formularens handlinger.';
         const actionsResponse = await fetch(actionsLink.proxy);
-        if (!actionsResponse.ok) throw new Error('Could not load actions');
+        if (!actionsResponse.ok) {
+            failureMessage = `Kunne ikke hente formularens handlinger (HTTP ${actionsResponse.status}).`;
+            throw new Error('Could not load actions');
+        }
+        failureMessage = 'Formularens handlinger har et ugyldigt format.';
         const availableActions = await actionsResponse.json();
         if (!Array.isArray(availableActions)) throw new Error('Unexpected actions response');
+        failureMessage = 'Ingen tilgængelige handlinger for sagsnotatet.';
         const actions = availableActions.filter(action => noteStatus(action?.name) && noteStatus(action.name) !== 'Låst'
             && /^\d+$/.test(String(action.id ?? '')));
         if (!actions.length) throw new Error('No available note actions');
@@ -264,7 +284,7 @@ const addNote = async (patient, rowIndex) => {
             subject: 'Afslutning af borger', text: String(text.value ?? ''),
         };
     } catch {
-        if (requestId === editRequest) editError.value = 'Kunne ikke oprette sagsnotatet.';
+        if (requestId === editRequest) editError.value = failureMessage;
     } finally {
         if (requestId === editRequest) editLoading.value = false;
     }
