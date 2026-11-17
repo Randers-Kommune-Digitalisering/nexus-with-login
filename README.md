@@ -42,6 +42,13 @@ otherwise the user must choose a status. New notes start with the subject
 `Afslutning af borger`, which can be edited before saving. CPR and name in the
 citizen list link to the corresponding Nexus citizen page in a new tab; the
 link uses the configured `BASE_URL` and the citizen ID, not the CPR.
+For new notes, Vue follows the form prototype's `availablePathwayAssociation`
+link and offers active pathways in the `Forløb` selector, including nested
+pathways. It initially selects the configured `programPathwayId` if active,
+otherwise the active pathway with `programPathwayId` 1. If neither exists,
+creation is blocked. Saving assigns `placement=PATHWAY` and the selected
+`patientPathwayId` as `referenceId`; existing notes retain their Nexus
+association and cannot change pathways here.
 After a create request, the UI only shows a new note if the follow-up Nexus read
 finds it. Otherwise it keeps the editor open with a bold red Danish error and
 disables another save until the user checks Nexus and cancels, avoiding an

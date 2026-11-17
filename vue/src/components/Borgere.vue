@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, toRaw, watch } from 'vue';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronUp, Pencil, Plus } from '@lucide/vue';
 import { noteFormDefinitionId, programPathwayId, referenceFilterId } from '../nexusConfig';
+import { activeNotePathways, defaultNotePathway } from '../notePathways';
 import { citizenListViewKey, readCitizenListView, saveCitizenListView } from '../viewState';
 
 const props = defineProps({ homeResource: { type: Object, required: true } });
@@ -50,7 +51,8 @@ const editChanged = computed(() => {
     const state = editState.value;
     if (!state || state.saveUnconfirmed) return false;
     if (!state.actionIndex && state.actionIndex !== 0) return false;
-    if (state.mode === 'create') return Boolean(state.subject.trim() && state.text.trim());
+    if (state.mode === 'create') return Boolean(state.subject.trim() && state.text.trim()
+        && state.pathways.some(pathway => pathway.patientPathwayId === state.pathwayId));
     return state.subject !== state.originalSubject || state.text !== state.originalText
         || state.actionIndex !== state.originalActionIndex;
 });
@@ -234,6 +236,17 @@ const addNote = async (patient, rowIndex) => {
         const subject = Array.isArray(items) && items.find(item => item?.label === 'Emne:');
         const text = Array.isArray(items) && items.find(item => item?.label === 'Tekst:');
         if (!subject || !text) throw new Error('Missing note fields');
+        if (!prototype.pathwayAssociation || typeof prototype.pathwayAssociation !== 'object') {
+            throw new Error('Missing pathway association');
+        }
+        const pathwayLink = nexusLink(
+            prototype.pathwayAssociation._links?.availablePathwayAssociation?.href, prototypeLink.url,
+        );
+        const pathwayResponse = await fetch(pathwayLink.proxy);
+        if (!pathwayResponse.ok) throw new Error('Could not load pathway associations');
+        const pathways = activeNotePathways(await pathwayResponse.json());
+        const selectedPathway = defaultNotePathway(pathways, programPathwayId);
+        if (!selectedPathway) throw new Error('No eligible note pathway');
         const actionsLink = nexusLink(prototype._links?.availableActions?.href, prototypeLink.url);
         const actionsResponse = await fetch(actionsLink.proxy);
         if (!actionsResponse.ok) throw new Error('Could not load actions');
@@ -247,6 +260,7 @@ const addNote = async (patient, rowIndex) => {
         editState.value = {
             mode: 'create', form: prototype, patient, prototypeUrl: prototypeLink.url,
             actions, actionIndex: draftIndex < 0 ? '' : draftIndex,
+            pathways, pathwayId: selectedPathway.patientPathwayId,
             subject: 'Afslutning af borger', text: String(text.value ?? ''),
         };
     } catch {
@@ -326,6 +340,15 @@ const saveNote = async () => {
     const payload = structuredClone(toRaw(state.form));
     payload.items.find(item => item.label === 'Emne:').value = state.subject;
     payload.items.find(item => item.label === 'Tekst:').value = state.text;
+    if (state.mode === 'create') {
+        if (!state.pathways.some(pathway => pathway.patientPathwayId === state.pathwayId)) {
+            editError.value = 'Vælg et aktivt forløb.';
+            return;
+        }
+        payload.pathwayAssociation.placement = 'PATHWAY';
+        payload.pathwayAssociation.parentReferenceId = null;
+        payload.pathwayAssociation.referenceId = state.pathwayId;
+    }
     editSaving.value = true;
     editError.value = '';
     let failureMessage = 'Kunne ikke gemme sagsnoten. Prøv igen.';
@@ -712,6 +735,10 @@ onMounted(loadCitizenLists);
                                             <td colspan="5">
                                                 <p v-if="editLoading" role="status">Henter sagsnotat…</p>
                                                 <form v-else-if="editState" class="note-editor" @submit.prevent="saveNote">
+                                                    <label :for="`new-note-pathway-${index}`">Forløb</label>
+                                                    <select :id="`new-note-pathway-${index}`" v-model.number="editState.pathwayId" required>
+                                                        <option v-for="pathway in editState.pathways" :key="pathway.patientPathwayId" :value="pathway.patientPathwayId">{{ pathway.name }}</option>
+                                                    </select>
                                                     <label :for="`new-note-subject-${index}`">Emne</label>
                                                     <input :id="`new-note-subject-${index}`" v-model="editState.subject" type="text" required>
                                                     <label :for="`new-note-text-${index}`">Tekst</label>
