@@ -361,11 +361,12 @@ const saveNote = async () => {
     payload.items.find(item => item.label === 'Emne:').value = state.subject;
     payload.items.find(item => item.label === 'Tekst:').value = state.text;
     if (state.mode === 'create') {
-        if (!state.pathways.some(pathway => pathway.patientPathwayId === state.pathwayId)) {
+        const pathway = state.pathways.find(pathway => pathway.patientPathwayId === state.pathwayId);
+        if (!pathway) {
             editError.value = 'Vælg et aktivt forløb.';
             return;
         }
-        payload.pathwayAssociation.placement = 'PATHWAY';
+        payload.pathwayAssociation.placement = toRaw(pathway);
         payload.pathwayAssociation.parentReferenceId = null;
         payload.pathwayAssociation.referenceId = state.pathwayId;
     }

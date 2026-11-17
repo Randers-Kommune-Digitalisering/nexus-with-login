@@ -46,8 +46,8 @@ For new notes, Vue follows the form prototype's `availablePathwayAssociation`
 link and offers active pathways in the `Forløb` selector, including nested
 pathways. It initially selects the configured `programPathwayId` if active,
 otherwise the active pathway with `programPathwayId` 1. If neither exists,
-creation is blocked. Saving assigns `placement=PATHWAY` and the selected
-`patientPathwayId` as `referenceId`; existing notes retain their Nexus
+creation is blocked. Saving assigns the selected pathway as the placement object
+and its `patientPathwayId` as `referenceId`; existing notes retain their Nexus
 association and cannot change pathways here.
 After a create request, the UI only shows a new note if the follow-up Nexus read
 finds it. Otherwise it keeps the editor open with a bold red Danish error and
