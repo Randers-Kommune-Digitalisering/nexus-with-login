@@ -3,8 +3,10 @@ export const activeNotePathways = (associations) => {
     const pathways = [];
     const visit = (nodes) => {
         for (const node of nodes) {
-            const placement = node?.patientPathwayPlacement;
-            if (placement?.active && Number.isSafeInteger(placement.patientPathwayId)
+            const placement = node?.patientPathwayPlacement ?? node;
+            const active = node?.patientPathwayPlacement
+                ? placement.active === true : placement?.pathwayStatus === 'ACTIVE';
+            if (active && Number.isSafeInteger(placement.patientPathwayId)
                 && placement.patientPathwayId > 0 && typeof placement.name === 'string' && placement.name.trim()) {
                 pathways.push(placement);
             }
