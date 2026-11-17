@@ -257,7 +257,7 @@ const addNote = async (patient, rowIndex) => {
         }
         failureMessage = 'Listen over tilgængelige forløb har et ugyldigt format.';
         const pathways = activeNotePathways(await pathwayResponse.json());
-        failureMessage = 'Hverken standardforløbet eller FSIII er aktivt for borgeren.';
+        failureMessage = 'Hverken standardforløbet, FSIII eller forløbet med id 2 er aktivt for borgeren.';
         const selectedPathway = defaultNotePathway(pathways, programPathwayId);
         if (!selectedPathway) throw new Error('No eligible note pathway');
         failureMessage = 'Formularens link til handlinger mangler eller er ugyldigt.';

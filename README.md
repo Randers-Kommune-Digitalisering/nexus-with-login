@@ -45,7 +45,7 @@ link uses the configured `BASE_URL` and the citizen ID, not the CPR.
 For new notes, Vue follows the form prototype's `availablePathwayAssociation`
 link and offers active pathways in the `Forløb` selector, including nested
 pathways. It initially selects the configured `programPathwayId` if active,
-otherwise the active pathway with `programPathwayId` 1. If neither exists,
+otherwise the active pathway with `programPathwayId` 1, then 2. If none exists,
 creation is blocked. Saving assigns the selected pathway as the placement object
 and its `patientPathwayId` as `referenceId`; existing notes retain their Nexus
 association and cannot change pathways here.

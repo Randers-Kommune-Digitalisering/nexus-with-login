@@ -31,4 +31,5 @@ export const activeNotePathways = (associations) => {
 export const defaultNotePathway = (pathways, programPathwayId) =>
     pathways.find(pathway => pathway.programPathwayId === programPathwayId)
     ?? pathways.find(pathway => pathway.programPathwayId === 1)
+    ?? pathways.find(pathway => pathway.programPathwayId === 2)
     ?? null;
