@@ -887,6 +887,9 @@ onMounted(loadCitizenLists);
     .patient-row.expanded {
         font-weight: 700;
     }
+    .patient-row.expanded a {
+        font-weight: inherit;
+    }
     .patient-row:has(.icon-button:disabled) {
         cursor: default;
     }
