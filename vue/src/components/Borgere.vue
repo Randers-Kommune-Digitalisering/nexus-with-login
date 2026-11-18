@@ -503,13 +503,14 @@ const inProgressOrdersForPatient = async (patient) => {
     if (!Array.isArray(orders)) throw new Error('Invalid order response');
     return orders.map(order => {
         const href = order?._links?.self?.href;
-        if (typeof order?.requestedDeliveryDate !== 'string' || typeof href !== 'string' || !href) {
+        if ((order?.requestedDeliveryDate != null && typeof order.requestedDeliveryDate !== 'string')
+            || typeof href !== 'string' || !href) {
             throw new Error('Invalid order response');
         }
         const url = new URL(href, `${nexusBaseUrl.value}/api/hcl-depot/orders`);
         if (url.protocol !== 'https:' || url.origin !== nexusBaseUrl.value
             || url.username || url.password) throw new Error('Invalid order link');
-        return { requestedDeliveryDate: order.requestedDeliveryDate, href: url.href };
+        return { requestedDeliveryDate: order.requestedDeliveryDate || '-', href: url.href };
     });
 };
 

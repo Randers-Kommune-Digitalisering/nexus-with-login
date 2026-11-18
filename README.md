@@ -45,7 +45,7 @@ link uses the configured `BASE_URL` and the citizen ID, not the CPR.
 For each citizen on the visible page, the list also requests
 `GET /api/hcl-depot/orders?patientId=<id>&inProgress=true` through Flask.
 The "Igangværende ordrer" column shows each order's `requestedDeliveryDate`
-linked to its Nexus `self` URL in a new tab. Orders are not stored in browser
+(or `-` when absent) linked to its Nexus `self` URL in a new tab. Orders are not stored in browser
 storage. The app suppresses request logs for this route because the query
 contains a patient ID; upstream and ingress logs should likewise avoid
 retaining patient identifiers.
