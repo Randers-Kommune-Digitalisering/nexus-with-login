@@ -48,10 +48,13 @@ def nexus_resource(resource):
 @api_endpoints.route('/hcl-depot/orders', methods=['GET'])
 def in_progress_orders():
     patient_id = request.args.get('patientId')
-    if (not patient_id or not patient_id.isascii() or not patient_id.isdecimal()
-            or request.args.getlist('inProgress') != ['true']
-            or set(request.args) != {'patientId', 'inProgress'}
-            or len(request.args.getlist('patientId')) != 1):
+    if not patient_id or not patient_id.isascii() or not patient_id.isdecimal():
+        return jsonify(error='Invalid order query'), 400
+    if any((
+        request.args.getlist('inProgress') != ['true'],
+        set(request.args) != {'patientId', 'inProgress'},
+        len(request.args.getlist('patientId')) != 1,
+    )):
         return jsonify(error='Invalid order query'), 400
     return nexus_request('orders', f'{BASE_URL}/api/hcl-depot/')
 
