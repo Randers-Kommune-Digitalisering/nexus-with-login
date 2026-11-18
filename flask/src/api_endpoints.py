@@ -45,7 +45,18 @@ def nexus_resource(resource):
     return nexus_request(resource)
 
 
-def nexus_request(resource):
+@api_endpoints.route('/hcl-depot/orders', methods=['GET'])
+def in_progress_orders():
+    patient_id = request.args.get('patientId')
+    if (not patient_id or not patient_id.isascii() or not patient_id.isdecimal()
+            or request.args.getlist('inProgress') != ['true']
+            or set(request.args) != {'patientId', 'inProgress'}
+            or len(request.args.getlist('patientId')) != 1):
+        return jsonify(error='Invalid order query'), 400
+    return nexus_request('orders', f'{BASE_URL}/api/hcl-depot/')
+
+
+def nexus_request(resource, base_url=NEXUS_BASE):
     segments = resource.removesuffix('/').split('/') if resource else []
     if any(not segment or segment in ('.', '..') or not all(
         (character.isascii() and character.isalnum()) or character in '._~-' for character in segment
@@ -78,7 +89,7 @@ def nexus_request(resource):
     try:
         upstream = requests.request(
             request.method,
-            NEXUS_BASE + resource,
+            base_url + resource,
             params=list(request.args.items(multi=True)),
             headers=headers,
             data=request.get_data() if request.method in ('POST', 'PUT') else None,

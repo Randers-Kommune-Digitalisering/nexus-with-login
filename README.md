@@ -42,6 +42,13 @@ otherwise the user must choose a status. New notes start with the subject
 `Afslutning af borger`, which can be edited before saving. CPR and name in the
 citizen list link to the corresponding Nexus citizen page in a new tab; the
 link uses the configured `BASE_URL` and the citizen ID, not the CPR.
+For each citizen on the visible page, the list also requests
+`GET /api/hcl-depot/orders?patientId=<id>&inProgress=true` through Flask.
+The "Igangværende ordrer" column shows each order's `requestedDeliveryDate`
+linked to its Nexus `self` URL in a new tab. Orders are not stored in browser
+storage. The app suppresses request logs for this route because the query
+contains a patient ID; upstream and ingress logs should likewise avoid
+retaining patient identifiers.
 For new notes, Vue follows the form prototype's `availablePathwayAssociation`
 link and offers active pathways in the `Forløb` selector, including nested
 pathways. It initially selects the configured `programPathwayId` if active,

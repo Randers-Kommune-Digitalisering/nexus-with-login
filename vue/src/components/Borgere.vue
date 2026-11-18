@@ -494,6 +494,25 @@ const additionalInfoForPatient = async (patient) => {
     }
 };
 
+const inProgressOrdersForPatient = async (patient) => {
+    const patientId = String(patient?.id ?? '');
+    if (!/^\d+$/.test(patientId)) throw new Error('Invalid patient ID');
+    const response = await fetch(`/api/hcl-depot/orders?patientId=${patientId}&inProgress=true`);
+    if (!response.ok) throw new Error(`Igangværende ordrer: HTTP ${response.status}`);
+    const orders = await response.json();
+    if (!Array.isArray(orders)) throw new Error('Invalid order response');
+    return orders.map(order => {
+        const href = order?._links?.self?.href;
+        if (typeof order?.requestedDeliveryDate !== 'string' || typeof href !== 'string' || !href) {
+            throw new Error('Invalid order response');
+        }
+        const url = new URL(href, `${nexusBaseUrl.value}/api/hcl-depot/orders`);
+        if (url.protocol !== 'https:' || url.origin !== nexusBaseUrl.value
+            || url.username || url.password) throw new Error('Invalid order link');
+        return { requestedDeliveryDate: order.requestedDeliveryDate, href: url.href };
+    });
+};
+
 const loadCitizenLists = async () => {
     try {
         const configResponse = await fetch('/api/citizen-list-config');
@@ -588,10 +607,12 @@ const fetchPatientPage = async (pageIndex) => {
             ? sortedAllPatientRecords.value.slice(offset, offset + pageSizes.value[pageIndex])
             : await fetchPageRecords(pageIndex);
         if (requestId !== selectionRequest) return;
-        const rows = await Promise.all(records.map(async patient => ({
-            ...patient,
-            ...await additionalInfoForPatient(patient),
-        })));
+        const rows = await Promise.all(records.map(async patient => {
+            const [info, inProgressOrders] = await Promise.all([
+                additionalInfoForPatient(patient), inProgressOrdersForPatient(patient),
+            ]);
+            return { ...patient, ...info, inProgressOrders };
+        }));
         if (requestId === selectionRequest) {
             patientRecords.value = rows;
             currentPageIndex.value = pageIndex;
@@ -695,6 +716,7 @@ onMounted(loadCitizenLists);
                             </button>
                         </th>
                         <th v-for="column in otherColumns" :key="column.field" scope="col" :class="column.className">{{ column.label }}</th>
+                        <th scope="col">Igangværende ordrer</th>
                         <th v-for="key in additionalInfoKeys" :key="key" scope="col" :class="{ 'subject-column': key.toLowerCase() === 'emne' }">{{ key.toLowerCase() === 'emne' ? 'Notat emne' : key }}</th>
                         <th scope="col" class="single-line" :aria-sort="sortField === 'referenceDate' ? sortDirection : undefined">
                             <button type="button" class="sort-header" :disabled="editSaving || fetching" @click="sortBy('referenceDate')">
@@ -719,6 +741,12 @@ onMounted(loadCitizenLists);
                             <span v-else class="name-text">{{ patient.fullReversedName }}</span>
                         </td>
                         <td><span class="address-text">{{ formatAddress(patient.currentAddress) }}</span></td>
+                        <td>
+                            <div v-for="(order, orderIndex) in patient.inProgressOrders" :key="orderIndex">
+                                <a :href="order.href" target="_blank" rel="noopener noreferrer"
+                                    @click.stop>{{ order.requestedDeliveryDate }}</a>
+                            </div>
+                        </td>
                         <td v-for="key in additionalInfoKeys" :key="key">
                             <span class="clamped extra-text" :class="{ 'subject-text': key.toLowerCase() === 'emne' }">{{ patient.additionalInfo?.[key] }}</span>
                         </td>
@@ -733,7 +761,7 @@ onMounted(loadCitizenLists);
                         </td>
                     </tr>
                     <tr v-if="expandedPatient === patient" :id="`patient-notes-${index}`" class="notes-row">
-                        <td :colspan="6 + additionalInfoKeys.length">
+                        <td :colspan="7 + additionalInfoKeys.length">
                             <div class="notes-panel card randers">
                                 <div class="header notes-header">
                                     <button type="button" class="add-note" :disabled="editSaving || editingNoteKey === `${index}:new`" @click="addNote(patient, index)">
