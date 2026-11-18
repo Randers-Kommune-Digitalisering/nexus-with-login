@@ -502,13 +502,13 @@ const inProgressOrdersForPatient = async (patient) => {
     const orders = await response.json();
     if (!Array.isArray(orders)) throw new Error('Invalid order response');
     return orders.map(order => {
-        if ((order?.requestedDeliveryDate != null && typeof order.requestedDeliveryDate !== 'string')
-            || typeof order?.uid !== 'string' || !order.uid.trim()) {
+        if (!order || typeof order !== 'object'
+            || (order.requestedDeliveryDate != null && typeof order.requestedDeliveryDate !== 'string')) {
             throw new Error('Invalid order response');
         }
         return {
             requestedDeliveryDate: formatDate(order.requestedDeliveryDate) || 'Ukendt leveringsdato',
-            href: `${nexusBaseUrl.value}/hcl-matching/citizen/${patientId}/order/${encodeURIComponent(order.uid)}`,
+            href: `${nexusBaseUrl.value}/hcl-matching/citizen/${patientId}/overview/current`,
         };
     });
 };
