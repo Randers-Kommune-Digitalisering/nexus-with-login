@@ -736,9 +736,7 @@ onMounted(loadCitizenLists);
                             <template v-else>{{ patient.patientIdentifier?.identifier }}</template>
                         </td>
                         <td>
-                            <a v-if="citizenHref(patient)" :href="citizenHref(patient)" target="_blank" rel="noopener noreferrer"
-                                class="name-text" @click.stop>{{ patient.fullReversedName }}</a>
-                            <span v-else class="name-text">{{ patient.fullReversedName }}</span>
+                            <span class="name-text">{{ patient.fullReversedName }}</span>
                         </td>
                         <td><span class="address-text">{{ formatAddress(patient.currentAddress) }}</span></td>
                         <td>

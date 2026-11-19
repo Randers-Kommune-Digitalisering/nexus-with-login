@@ -39,9 +39,9 @@ Note text, patient records, and unsaved edits are never stored in browser storag
 Without a saved selection, the first allowed citizen list opens automatically.
 When creating a note, `Kladde` is preselected if Nexus offers that action;
 otherwise the user must choose a status. New notes start with the subject
-`Afslutning af borger`, which can be edited before saving. CPR and name in the
-citizen list link to the corresponding Nexus citizen page in a new tab; the
-link uses the configured `BASE_URL` and the citizen ID, not the CPR.
+`Afslutning af borger`, which can be edited before saving. CPR in the citizen
+list links to the corresponding Nexus citizen page in a new tab; the name is
+plain text. The link uses the configured `BASE_URL` and the citizen ID, not the CPR.
 For each citizen on the visible page, the list also requests
 `GET /api/hcl-depot/orders?patientId=<id>&inProgress=true` through Flask.
 The "Igangværende ordrer" column shows each order's `requestedDeliveryDate`
