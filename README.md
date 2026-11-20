@@ -1,7 +1,10 @@
 # Vue/Flask App brugerdefineret Nexus indhold
 App der håndterer log ind / brygerstyring til Nexus og viser brugerdefineret indhold + brugedefineret interaktion.
 
-**NB**: auto deployer alle pushed commits direkte til prod!
+**NB**: Automatisk test, build og deploy til prod sker kun ved push af et
+versionstag (`v*.*.*`), hvis taggets commit er på `main`. Docker-imaget og
+deployment bruger det præcise tag (inklusive `v`). Det separate manuelle
+build-workflow er stadig tilgængeligt.
 
 ## Kørsel af frontend + backend i docker
 * Kør ```docker-compose up``` i top dir
