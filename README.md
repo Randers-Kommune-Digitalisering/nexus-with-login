@@ -42,12 +42,14 @@ otherwise the user must choose a status. New notes start with the subject
 `Afslutning af borger`, which can be edited before saving. CPR in the citizen
 list links to the corresponding Nexus citizen page in a new tab; the name is
 plain text. The link uses the configured `BASE_URL` and the citizen ID, not the CPR.
+Clicking the CPR link also expands that citizen's notes in the list.
 For each citizen on the visible page, the list also requests
 `GET /api/hcl-depot/orders?patientId=<id>&inProgress=true` through Flask.
 The "Igangværende ordrer" column shows each order's `requestedDeliveryDate`
 as dd/mm/yy (or "Ukendt leveringsdato" when absent), linked to the Nexus
 `/hcl-matching/citizen/<patient id>/overview/current` page in a new tab. Orders are not stored in browser
-storage. The app suppresses request logs for this route because the query
+storage. Clicking an order link also expands that citizen's notes
+in the list. The app suppresses request logs for this route because the query
 contains a patient ID; upstream and ingress logs should likewise avoid
 retaining patient identifiers.
 For new notes, Vue follows the form prototype's `availablePathwayAssociation`

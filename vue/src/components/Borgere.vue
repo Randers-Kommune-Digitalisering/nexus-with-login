@@ -216,6 +216,12 @@ const toggleRow = (patient) => {
     expandedPatient.value = expandedPatient.value === patient ? null : patient;
 };
 
+const expandRow = (patient) => {
+    if (editSaving.value || expandedPatient.value === patient) return;
+    cancelEdit();
+    expandedPatient.value = patient;
+};
+
 const addNote = async (patient, rowIndex) => {
     if (editSaving.value) return;
     cancelEdit();
@@ -732,7 +738,7 @@ onMounted(loadCitizenLists);
                         <td class="single-line">{{ formatDate(patient.deceasedDate) || '-' }}</td>
                         <td class="single-line">
                             <a v-if="citizenHref(patient)" :href="citizenHref(patient)" target="_blank" rel="noopener noreferrer"
-                                @click.stop>{{ patient.patientIdentifier?.identifier }}</a>
+                                @click.stop="expandRow(patient)">{{ patient.patientIdentifier?.identifier }}</a>
                             <template v-else>{{ patient.patientIdentifier?.identifier }}</template>
                         </td>
                         <td>
@@ -742,7 +748,7 @@ onMounted(loadCitizenLists);
                         <td>
                             <div v-for="(order, orderIndex) in patient.inProgressOrders" :key="orderIndex">
                                 <a :href="order.href" target="_blank" rel="noopener noreferrer"
-                                    @click.stop>{{ order.requestedDeliveryDate }}</a>
+                                    @click.stop="expandRow(patient)">{{ order.requestedDeliveryDate }}</a>
                             </div>
                         </td>
                         <td v-for="key in additionalInfoKeys" :key="key">
