@@ -1,54 +1,5 @@
 <script setup>
-    import { ref } from 'vue'
-
-    defineExpose( { setAlert } )
-
-    // Set menu items
-
-    const menuItems = ref([
-        {
-            "title": "Start",
-            "url": "/"
-        },
-        {
-            "title": "UI Templates",
-            "url": "/templates",
-            "alert": "OBS"
-        },
-        {
-            "title": "Vue Info",
-            "url": "/vue"
-        }
-    ])
-
-    // Set selected = true for landing page (URL)
-
-    const landingPageIndex = menuItems.value.findIndex(x => x.url == new URL(location.href).pathname)
-
-    if(landingPageIndex !== -1)
-        menuItems.value[ landingPageIndex ].selected = true
-
-
-    // Function to visually update selected item
-
-    function select(item)
-    {
-        menuItems.value.forEach(x => x.selected = false)
-        item.selected = true
-    }
-
-    // Function to set alert on an item
-
-    function setAlert(itemTitle, alert)
-    {
-        // Delete alert
-        if(alert === "" || alert === null || alert === undefined)
-            delete menuItems.value[ menuItems.value.findIndex(x => x.title == itemTitle) ].alert
-
-        // Set alert
-        else
-            menuItems.value[ menuItems.value.findIndex(x => x.title == itemTitle) ].alert = alert
-    }
+    import randersLogo from '@/assets/randers-logo.svg'
 
     // Dark mode
 
@@ -64,11 +15,12 @@
 
     <div class="header">
 
-        <div class="randers-logo"></div>
+        <div class="menu-brand">
+            <img class="randers-logo" :src="randersLogo" alt="Randers Kommune">
+        </div>
         
-        <router-link v-for="item in menuItems" :to="item.url" :class="item.selected ? 'selected' : ''" @click="select(item)">
-            <span v-if="item.alert" class="alert">{{item.alert}}</span>
-            <span>{{item.title}}</span>
+        <router-link to="/" active-class="selected">
+            <span>Borgere</span>
         </router-link>
 
         <div class="filler"></div>
@@ -85,9 +37,21 @@
 <style scoped>
 /* Mobile first */
 /* 1 rem = 10 px, except when defining @media rules, then 1 rem = 16 px */
+.menu-brand
+{
+    flex: none;
+    width: 13rem;
+    display: flex;
+    align-self: center;
+    justify-content: center;
+    padding-left: 1rem;
+    margin-right: 1rem;
+}
 .randers-logo
 {
-    background-position: 2rem 0rem;
+    flex: none;
+    width: 12rem;
+    max-width: none;
 }
 
 /* Is top header */
@@ -183,14 +147,30 @@
         right: auto;
         left: 0rem;
         transform: none;
-        width: 20rem;
+        width: 12rem;
         height: 100vh;
 
         border-bottom: 0rem;
+        overflow: visible;
     }
+        .menu-brand
+        {
+            align-self: center;
+            width: 100%;
+            padding-left: 0;
+            margin-right: 0;
+            transform: translateY(-1.2rem);
+        }
+        .randers-logo
+        {
+            transform: translateX(1rem);
+        }
         .header a
         {
             padding-right: 1.5rem;
+            max-width: 100%;
+            white-space: normal;
+            text-align: right;
 
             border-bottom: 0rem;
             border-right: 0.4rem solid #ffffff00;
@@ -212,17 +192,35 @@
 }
 
 
-/* Logo skjules på meget små skærme */
+/* Narrow screens */
 @media screen and (max-width: 35rem)
 {
-    .randers-logo
-    {
-        display: none;
-    }
     .header
     {
         padding-left: 10px;
         padding-right: 10px;
+    }
+    .menu-brand
+    {
+        justify-content: flex-start;
+    }
+}
+@media screen and (max-width: 22rem)
+{
+    .header
+    {
+        flex-wrap: wrap;
+        align-content: center;
+        height: 9rem;
+    }
+    .menu-brand
+    {
+        width: 100%;
+        margin-right: 0;
+    }
+    .randers-logo
+    {
+        object-position: left center;
     }
 }
 </style>

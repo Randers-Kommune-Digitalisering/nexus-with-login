@@ -1,28 +1,26 @@
 <script setup>
-import { ref } from 'vue';
-
+import { provide, ref } from 'vue'
 import Header from './components/Menu.vue'
-const headerComponent = ref(null)
-const currentComponent = ref(null)
+import LoginSession from './components/LoginSession.vue'
 
-// Function to update header alert from currentComponent
-const setHeaderAlert = (headerItemTitle, alertText) => {
-    headerComponent.value.setAlert(headerItemTitle, alertText)
-};
+const homeResource = ref(null)
+provide('homeResource', homeResource)
+const setHomeResource = (home) => { homeResource.value = home }
 </script>
 
 <template>
 
   <header>
 
-      <Header ref="headerComponent" />
+    <Header />
 
   </header>
   
   <main>
 
       <div class="content">
-          <router-view ref="currentComponent" @onHeaderAlert="setHeaderAlert"></router-view>
+          <LoginSession @session-change="setHomeResource" />
+          <router-view></router-view>
       </div>
 
   </main>
@@ -50,6 +48,14 @@ main
     padding-top: 6rem;
 }
 
+@media screen and (max-width: 22rem)
+{
+    main
+    {
+        padding-top: 9rem;
+    }
+}
+
 /* Tablet or desktop */
 @media screen and (min-width: 53.125rem) /* 850px or 85rem using 16 px conversion */
 {
@@ -68,7 +74,7 @@ main
     {
         /* Remove padding for header as header becomes side menu */
         padding-top: 0rem;
-        margin-left: 20rem;
+        margin-left: 12rem;
         padding-left: 2rem;
         padding-right: 2rem;
     }

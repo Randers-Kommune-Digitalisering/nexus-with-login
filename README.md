@@ -1,6 +1,10 @@
 # Vue/Flask App brugerdefineret Nexus indhold
 App der håndterer log ind / brygerstyring til Nexus og viser brugerdefineret indhold + brugedefineret interaktion.
 
+**NB**: Automatisk test, build og deploy til prod sker kun ved push af et
+versionstag (`v*.*.*`), hvis taggets commit er på `main`. Docker-imaget og
+deployment bruger det præcise tag (inklusive `v`). Det separate manuelle
+build-workflow er stadig tilgængeligt.
 
 ## Kørsel af frontend + backend i docker
 * Kør ```docker-compose up``` i top dir
@@ -22,13 +26,55 @@ App der håndterer log ind / brygerstyring til Nexus og viser brugerdefineret in
 
 ## Nexus API from Vue
 
-After login, Vue calls Flask on the same origin. `GET /api/home-ressource` fetches the
+Vue checks `GET /user/session` on page load; it returns only an authentication
+boolean and does not cache the response. Only authenticated sessions request
+`GET /api/home-ressource` to fetch the
 Nexus home resource. Other HAL links under
 `https://randers.nexus.kmd.dk/api/core/mobile/randers/v2/` can be requested through
 `/api/nexus/<path>` with GET, POST, or PUT. Resolve relative links against the Nexus
 URL of the response that supplied them, then send the path and query to the local
 proxy. Flask keeps the user's access token in its session and sends it to Nexus;
 never put the client secret or access token in Vue.
+The browser tab remembers the selected list, sort order, page, and expanded
+patient ID in `sessionStorage`, restoring them only after fresh Nexus data loads.
+It clears this view state on logout or when the session is no longer authenticated.
+Note text, patient records, and unsaved edits are never stored in browser storage.
+Without a saved selection, the first allowed citizen list opens automatically.
+When creating a note, `Kladde` is preselected if Nexus offers that action;
+otherwise the user must choose a status. New notes start with the subject
+`Afslutning af borger`, which can be edited before saving. CPR in the citizen
+list links to the corresponding Nexus citizen page in a new tab; the name is
+plain text. The link uses the configured `BASE_URL` and the citizen ID, not the CPR.
+Clicking the CPR link also expands that citizen's notes in the list.
+For each citizen on the visible page, the list also requests
+`GET /api/hcl-depot/orders?patientId=<id>&inProgress=true` through Flask.
+The "Igangværende ordrer" column shows each order's `requestedDeliveryDate`
+as dd/mm/yy (or "Ukendt leveringsdato" when absent), linked to the Nexus
+`/hcl-matching/citizen/<patient id>/overview/current` page in a new tab. Orders are not stored in browser
+storage. Clicking an order link also expands that citizen's notes
+in the list. The app suppresses request logs for this route because the query
+contains a patient ID; upstream and ingress logs should likewise avoid
+retaining patient identifiers.
+For new notes, Vue follows the form prototype's `availablePathwayAssociation`
+link and offers active pathways in the `Forløb` selector, including nested
+pathways. It initially selects the configured `programPathwayId` if active,
+otherwise the active pathway with `programPathwayId` 1, then 2. If none exists,
+creation is blocked. Saving assigns the selected pathway as the placement object
+and its `patientPathwayId` as `referenceId`; existing notes retain their Nexus
+association and cannot change pathways here.
+After a create request, the UI only shows a new note if the follow-up Nexus read
+finds it. Otherwise it keeps the editor open with a bold red Danish error and
+disables another save until the user checks Nexus and cancels, avoiding an
+accidental duplicate submission. Successful saves show no message. Unsaved
+note text remains only in the current page.
+Before a Nexus request, Flask renews an access token nearing expiry using the
+refresh token stored in its server-side session. A rotated refresh token replaces
+the previous one. If Keycloak rejects renewal or the refresh token is unavailable,
+the user must log in again; transient provider failures return an error without
+sending the Nexus request. Keycloak's session and refresh-token limits still apply.
+Use HTTPS for `APP_URL` in production so session cookies are marked Secure;
+cookies are HttpOnly and SameSite=Lax. Protect the server-side session store,
+which contains refresh tokens.
 
 The default Nexus origin is set by `BASE_URL` and its API prefix by `BASE_PATH`.
 Set them in the app environment when targeting a different Nexus installation;

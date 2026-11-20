@@ -5,6 +5,7 @@ import requests
 from utils.config import MAX_WRITE_BYTES, BASE_URL, BASE_PATH, ALLOWED_CITIZEN_LIST_IDS
 
 from flask import Blueprint, Response, jsonify, request, session
+from user_handling import TokenRefreshUnavailable, current_access_token
 
 logger = logging.getLogger(__name__)
 api_endpoints = Blueprint('api', __name__, url_prefix='/api')
@@ -25,7 +26,7 @@ def home_ressource():
 def citizen_list_config():
     if not session.get('token', {}).get('access_token'):
         return jsonify(error='Unauthorized'), 401
-    response = jsonify(allowedCitizenListIds=ALLOWED_CITIZEN_LIST_IDS)
+    response = jsonify(allowedCitizenListIds=ALLOWED_CITIZEN_LIST_IDS, nexusBaseUrl=BASE_URL)
     response.headers['Cache-Control'] = 'no-store'
     return response
 
@@ -44,15 +45,28 @@ def nexus_resource(resource):
     return nexus_request(resource)
 
 
-def nexus_request(resource):
+@api_endpoints.route('/hcl-depot/orders', methods=['GET'])
+def in_progress_orders():
+    patient_id = request.args.get('patientId')
+    if not patient_id or not patient_id.isascii() or not patient_id.isdecimal():
+        return jsonify(error='Invalid order query'), 400
+    if any((
+        request.args.getlist('inProgress') != ['true'],
+        set(request.args) != {'patientId', 'inProgress'},
+        len(request.args.getlist('patientId')) != 1,
+    )):
+        return jsonify(error='Invalid order query'), 400
+    return nexus_request('orders', f'{BASE_URL}/api/hcl-depot/')
+
+
+def nexus_request(resource, base_url=NEXUS_BASE):
     segments = resource.removesuffix('/').split('/') if resource else []
     if any(not segment or segment in ('.', '..') or not all(
         (character.isascii() and character.isalnum()) or character in '._~-' for character in segment
     ) for segment in segments):
         return jsonify(error='Invalid Nexus path'), 400
 
-    token = session.get('token', {}).get('access_token')
-    if not token:
+    if not session.get('token', {}).get('access_token'):
         return jsonify(error='Unauthorized'), 401
 
     if request.method in ('POST', 'PUT'):
@@ -63,6 +77,13 @@ def nexus_request(resource):
         if request.content_length is None or request.content_length > MAX_WRITE_BYTES:
             return jsonify(error='Invalid request size'), 413
 
+    try:
+        token = current_access_token()
+    except TokenRefreshUnavailable:
+        return jsonify(error='Authentication provider unavailable'), 502
+    if not token:
+        return jsonify(error='Unauthorized'), 401
+
     headers = {'Authorization': f'Bearer {token}'}
     for name in ('Accept', 'Content-Type', 'If-Match', 'If-None-Match'):
         if name in request.headers:
@@ -71,7 +92,7 @@ def nexus_request(resource):
     try:
         upstream = requests.request(
             request.method,
-            NEXUS_BASE + resource,
+            base_url + resource,
             params=list(request.args.items(multi=True)),
             headers=headers,
             data=request.get_data() if request.method in ('POST', 'PUT') else None,

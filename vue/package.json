@@ -9,6 +9,7 @@
     "host": "vite --host"
   },
   "dependencies": {
+    "@lucide/vue": "^1.54.0",
     "axios": "^1.5.1",
     "vue": "^3.3.4",
     "vue-router": "^4.2.5"
