@@ -47,7 +47,10 @@ def citizen_list_config():
 
 @api_endpoints.route('/csrf', methods=['GET'])
 def csrf_token():
-    token = session.setdefault('csrf_token', secrets.token_urlsafe(32))
+    token = session.get('csrf_token')
+    if token is None:
+        token = secrets.token_urlsafe(32)
+        session['csrf_token'] = token
     response = jsonify(token=token)
     response.headers['Cache-Control'] = 'no-store'
     return response

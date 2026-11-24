@@ -1,3 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+
 import pytest
 from unittest.mock import Mock, patch
 from main import create_app
@@ -200,3 +203,90 @@ def test_nexus_does_not_send_request_on_transient_refresh_failure(client):
 
     with client.session_transaction() as session:
         assert session['token']['refresh_token'] == 'old-refresh'
+
+
+def test_concurrent_requests_refresh_once_without_blocking_health(app):
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session['token'] = {
+            'access_token': 'old-access',
+            'refresh_token': 'old-refresh',
+            'expires_at': 1000,
+        }
+    sid = client.get_cookie('session').value
+    other_client = app.test_client()
+    with other_client.session_transaction() as session:
+        session['token'] = {'access_token': 'other-access', 'expires_at': 1100}
+    other_sid = other_client.get_cookie('session').value
+    started = Event()
+    release = Event()
+    refreshed = Mock(status_code=200)
+    refreshed.json.return_value = {
+        'access_token': 'new-access',
+        'refresh_token': 'new-refresh',
+        'expires_in': 120,
+    }
+
+    def refresh(*args, **kwargs):
+        started.set()
+        assert release.wait(5)
+        return refreshed
+
+    def get_home(session_id):
+        with app.test_client() as request_client:
+            request_client.set_cookie('session', session_id)
+            return request_client.get('/api/home-ressource')
+
+    upstream = Mock(status_code=200, content=b'{}', headers={})
+    with patch('user_handling.time.time', return_value=1000), \
+            patch('user_handling.requests.post', side_effect=refresh) as token_request, \
+            patch('api_endpoints.requests.request', return_value=upstream) as nexus, \
+            ThreadPoolExecutor(max_workers=4) as executor:
+        try:
+            first = executor.submit(get_home, sid)
+            assert started.wait(2)
+            second = executor.submit(get_home, sid)
+            health = executor.submit(lambda: app.test_client().get('/healthz'))
+            other = executor.submit(get_home, other_sid)
+            assert health.result(timeout=2).status_code == 200
+            assert other.result(timeout=2).status_code == 200
+        finally:
+            release.set()
+        assert first.result(timeout=5).status_code == 200
+        assert second.result(timeout=5).status_code == 200
+
+    token_request.assert_called_once()
+    auth_headers = [call.kwargs['headers']['Authorization'] for call in nexus.call_args_list]
+    assert auth_headers.count('Bearer new-access') == 2
+    assert auth_headers.count('Bearer other-access') == 1
+
+
+def test_concurrent_csrf_requests_share_token(app):
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session['token'] = {'access_token': 'valid-access'}
+    sid = client.get_cookie('session').value
+    started = Event()
+    release = Event()
+
+    def create_token(*args, **kwargs):
+        started.set()
+        assert release.wait(5)
+        return 'one-csrf-token'
+
+    def get_csrf():
+        with app.test_client() as request_client:
+            request_client.set_cookie('session', sid)
+            return request_client.get('/api/csrf').get_json()['token']
+
+    with patch('api_endpoints.secrets.token_urlsafe', side_effect=create_token) as generate, \
+            ThreadPoolExecutor(max_workers=2) as executor:
+        try:
+            first = executor.submit(get_csrf)
+            assert started.wait(2)
+            second = executor.submit(get_csrf)
+        finally:
+            release.set()
+        assert first.result(timeout=5) == second.result(timeout=5) == 'one-csrf-token'
+
+    generate.assert_called_once()

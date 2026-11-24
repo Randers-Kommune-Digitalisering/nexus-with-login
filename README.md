@@ -19,8 +19,13 @@ workflow is still available.
 * Start the development server: ```python flask/src/main.py```
 
 The production Docker image serves `main:app` with Gunicorn on `PORT` (default
-8080). It uses one worker with the current filesystem-backed session store and
-does not enable Gunicorn access logs, which could contain patient identifiers.
+8080). It uses one worker with eight threads. Requests from different sessions
+and health checks can run concurrently; requests sharing a session are serialized
+from session load through save so refresh-token rotation and session writes cannot
+race. Keep one worker and one replica with this in-process lock and filesystem
+session store; scaling either requires a shared session store and cross-process
+coordination. Gunicorn access logs remain disabled because they could contain
+patient identifiers.
 
 ## Development commands
 * Build a Docker image: ```docker build -t vue-python-template .```
