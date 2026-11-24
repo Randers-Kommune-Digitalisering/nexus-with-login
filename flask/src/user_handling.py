@@ -225,11 +225,19 @@ def add_user_handling(app):
         refreshToken = session['token']['refresh_token']
         endSessionEndpoint = f'{AUTH_URL}/{AUTH_PATH.strip("/")}/realms/{AUTH_REALM}/protocol/openid-connect/logout'
 
-        requests.post(endSessionEndpoint, data={
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
-            "refresh_token": refreshToken,
-        })
+        try:
+            response = requests.post(endSessionEndpoint, data={
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "refresh_token": refreshToken,
+            }, timeout=15, allow_redirects=False)
+        except requests.RequestException:
+            logger.warning('Logout request failed')
+            return jsonify(error='Authentication provider unavailable'), 502
+
+        if not 200 <= response.status_code < 300:
+            logger.warning('Logout endpoint returned status %s', response.status_code)
+            return jsonify(error='Authentication provider unavailable'), 502
 
         session.clear()
         return redirect('/')

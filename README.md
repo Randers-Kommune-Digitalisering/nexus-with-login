@@ -85,6 +85,8 @@ refresh token stored in its server-side session. A rotated refresh token replace
 the previous one. If Keycloak rejects renewal or the refresh token is unavailable,
 the user must log in again; transient provider failures return an error without
 sending the Nexus request. Keycloak's session and refresh-token limits still apply.
+Logout uses a 15-second provider-request timeout. If the provider request fails,
+the local session remains active and the UI reports an error so logout can be retried.
 Use HTTPS for `APP_URL` in production so session cookies are marked Secure;
 cookies are HttpOnly and SameSite=Lax. Protect the server-side session store,
 which contains refresh tokens.
