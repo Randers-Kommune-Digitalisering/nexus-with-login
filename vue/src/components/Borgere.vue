@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronUp, Pencil, Plus }
 import { noteFormDefinitionId, programPathwayId, referenceFilterId } from '../nexusConfig';
 import { activeNotePathways, defaultNotePathway } from '../notePathways';
 import { citizenListViewKey, readCitizenListView, saveCitizenListView } from '../viewState';
+import { queuedSessionFetch } from '../sessionFetch';
 
 const props = defineProps({ homeResource: { type: Object, required: true } });
 const citizenLists = ref([]);
@@ -238,7 +239,7 @@ const addNote = async (patient, rowIndex) => {
             `${patientPath(nexusPaths.value.formPrototype, patientId)}?formDefinitionId=${noteFormDefinitionId}&programPathwayId=${programPathwayId}&placement=PATHWAY`,
             new URL('./', preferencesUrl),
         );
-        const response = await fetch(prototypeLink.proxy);
+        const response = await queuedSessionFetch(prototypeLink.proxy);
         if (!response.ok) {
             failureMessage = `Kunne ikke hente sagsnotatets formular (HTTP ${response.status}).`;
             throw new Error('Could not load prototype');
@@ -258,7 +259,7 @@ const addNote = async (patient, rowIndex) => {
             prototype.pathwayAssociation._links?.availablePathwayAssociation?.href, prototypeLink.url,
         );
         failureMessage = 'Kunne ikke hente tilgængelige forløb.';
-        const pathwayResponse = await fetch(pathwayLink.proxy);
+        const pathwayResponse = await queuedSessionFetch(pathwayLink.proxy);
         if (!pathwayResponse.ok) {
             failureMessage = `Kunne ikke hente tilgængelige forløb (HTTP ${pathwayResponse.status}).`;
             throw new Error('Could not load pathway associations');
@@ -271,7 +272,7 @@ const addNote = async (patient, rowIndex) => {
         failureMessage = 'Formularens link til handlinger mangler eller er ugyldigt.';
         const actionsLink = nexusLink(prototype._links?.availableActions?.href, prototypeLink.url);
         failureMessage = 'Kunne ikke hente formularens handlinger.';
-        const actionsResponse = await fetch(actionsLink.proxy);
+        const actionsResponse = await queuedSessionFetch(actionsLink.proxy);
         if (!actionsResponse.ok) {
             failureMessage = `Kunne ikke hente formularens handlinger (HTTP ${actionsResponse.status}).`;
             throw new Error('Could not load actions');
@@ -308,7 +309,7 @@ const editNote = async (patient, note, rowIndex, noteIndex) => {
     try {
         const source = nexusLink(note.sourceHref, new URL('./', preferencesUrl));
         const formLink = nexusLink(note.referencedObjectHref, source.url);
-        const formResponse = await fetch(formLink.proxy);
+        const formResponse = await queuedSessionFetch(formLink.proxy);
         if (!formResponse.ok) {
             failureMessage = `Kunne ikke hente sagsnotens formular (HTTP ${formResponse.status}).`;
             throw new Error(failureMessage);
@@ -328,7 +329,7 @@ const editNote = async (patient, note, rowIndex, noteIndex) => {
         failureMessage = 'Formularens availableActions-link mangler eller er ugyldigt.';
         const actionsLink = nexusLink(form._links?.availableActions?.href, formLink.url);
         failureMessage = 'Kunne ikke hente formularens handlinger.';
-        const actionsResponse = await fetch(actionsLink.proxy);
+        const actionsResponse = await queuedSessionFetch(actionsLink.proxy);
         if (!actionsResponse.ok) {
             failureMessage = `Kunne ikke hente formularens handlinger (HTTP ${actionsResponse.status}).`;
             throw new Error(failureMessage);
@@ -396,7 +397,7 @@ const saveNote = async () => {
             updateProxy = nexusLink(action._links?.updateFormData?.href, state.actionsUrl).proxy;
         }
         failureMessage = 'Kunne ikke hente sikkerhedstoken.';
-        const csrfResponse = await fetch('/api/csrf');
+        const csrfResponse = await queuedSessionFetch('/api/csrf');
         if (!csrfResponse.ok) {
             failureMessage = `Kunne ikke hente sikkerhedstoken (HTTP ${csrfResponse.status}).`;
             throw new Error('Could not get CSRF token');
@@ -404,7 +405,7 @@ const saveNote = async () => {
         const { token } = await csrfResponse.json();
         if (typeof token !== 'string' || !token) throw new Error('Missing CSRF token');
         failureMessage = 'Kunne ikke gemme sagsnoten. Prøv igen.';
-        const response = await fetch(updateProxy, {
+        const response = await queuedSessionFetch(updateProxy, {
             method: state.mode === 'create' ? 'POST' : 'PUT',
             headers: {
                 'Content-Type': 'application/json',
@@ -460,7 +461,7 @@ const fetchLatestNoteDate = async (patient) => {
     const patientId = String(patient?.id ?? '');
     if (!/^\d+$/.test(patientId)) return null;
     try {
-        const response = await fetch(nexusLink(
+        const response = await queuedSessionFetch(nexusLink(
             `${patientPath(nexusPaths.value.flatReferences, patientId)}?filterId=${referenceFilterId}`,
             new URL('./', preferencesUrl),
         ).proxy);
@@ -480,7 +481,7 @@ const additionalInfoForPatient = async (patient) => {
             `${patientPath(nexusPaths.value.flatReferences, patientId)}?filterId=${referenceFilterId}`,
             new URL('./', preferencesUrl),
         );
-        const response = await fetch(sourceUrl.proxy);
+        const response = await queuedSessionFetch(sourceUrl.proxy);
         if (!response.ok) return { additionalInfo: {}, referenceDate: null, notes: [] };
         const references = await response.json();
         if (!Array.isArray(references)) return { additionalInfo: {}, referenceDate: null, notes: [] };
@@ -510,7 +511,7 @@ const additionalInfoForPatient = async (patient) => {
 const inProgressOrdersForPatient = async (patient) => {
     const patientId = String(patient?.id ?? '');
     if (!/^\d+$/.test(patientId)) throw new Error('Invalid patient ID');
-    const response = await fetch(`/api/hcl-depot/orders?patientId=${patientId}&inProgress=true`);
+    const response = await queuedSessionFetch(`/api/hcl-depot/orders?patientId=${patientId}&inProgress=true`);
     if (!response.ok) throw new Error(`Igangværende ordrer: HTTP ${response.status}`);
     const orders = await response.json();
     if (!Array.isArray(orders)) throw new Error('Invalid order response');
@@ -528,7 +529,7 @@ const inProgressOrdersForPatient = async (patient) => {
 
 const loadCitizenLists = async () => {
     try {
-        const configResponse = await fetch('/api/citizen-list-config');
+        const configResponse = await queuedSessionFetch('/api/citizen-list-config');
         if (!configResponse.ok) throw new Error(`Citizen list config: HTTP ${configResponse.status}`);
         const { allowedCitizenListIds, nexusBaseUrl: configuredBaseUrl, nexusPaths: configuredPaths } = await configResponse.json();
         const baseUrl = new URL(configuredBaseUrl);
@@ -552,7 +553,7 @@ const loadCitizenLists = async () => {
             throw new Error('Invalid preferences link');
         }
 
-        const preferencesResponse = await fetch('/api/nexus/preferences');
+        const preferencesResponse = await queuedSessionFetch('/api/nexus/preferences');
         if (!preferencesResponse.ok) throw new Error(`Preferences: HTTP ${preferencesResponse.status}`);
         const preferences = await preferencesResponse.json();
         if (!Array.isArray(preferences.CITIZEN_LIST)) throw new Error('Missing citizen lists');
@@ -603,7 +604,7 @@ const fetchPageRecords = async (pageIndex) => {
         throw new Error('Invalid patient data link');
     }
 
-    const response = await fetch(`/api/nexus/patients${patientUrl.search}`);
+    const response = await queuedSessionFetch(`/api/nexus/patients${patientUrl.search}`);
     if (!response.ok) throw new Error(`Patient data: HTTP ${response.status}`);
     const data = await response.json();
     const records = Array.isArray(data) ? data :
@@ -672,7 +673,7 @@ const fetchSelected = async () => {
             throw new Error('Invalid citizen list link');
         }
 
-        const response = await fetch(`/api/nexus/preferences/CITIZEN_LIST/${id}`);
+        const response = await queuedSessionFetch(`/api/nexus/preferences/CITIZEN_LIST/${id}`);
         if (!response.ok) throw new Error(`Citizen list: HTTP ${response.status}`);
         const detail = await response.json();
         if (requestId !== selectionRequest) return;
@@ -687,7 +688,7 @@ const fetchSelected = async () => {
             throw new Error('Invalid citizen list content link');
         }
 
-        const contentResponse = await fetch(`/api/nexus/${resourcePath}${contentUrl.search}`);
+        const contentResponse = await queuedSessionFetch(`/api/nexus/${resourcePath}${contentUrl.search}`);
         if (!contentResponse.ok) throw new Error(`Citizen list content: HTTP ${contentResponse.status}`);
         const content = await contentResponse.json();
         if (requestId !== selectionRequest) return;

@@ -27,6 +27,9 @@ class LockedFileSystemSessionInterface(FileSystemSessionInterface):
 
     def open_session(self, app, request):
         sid = request.cookies.get(app.config['SESSION_COOKIE_NAME'])
+        if request.path in ('/healthz', '/metrics') or request.path.startswith('/assets/'):
+            request.environ['nexus.session_skipped'] = True
+            return self.session_class(sid=sid)
         if sid:
             with self._locks_guard:
                 lock = self._locks.get(sid)
@@ -35,7 +38,9 @@ class LockedFileSystemSessionInterface(FileSystemSessionInterface):
                     self._locks[sid] = lock
         else:
             lock = threading.RLock()
-        lock.acquire()
+        if not lock.acquire(blocking=False):
+            request.environ['nexus.session_busy'] = True
+            return self.session_class(sid=sid)
         request.environ['nexus.session_lock'] = lock
         try:
             return super().open_session(app, request)
@@ -44,6 +49,8 @@ class LockedFileSystemSessionInterface(FileSystemSessionInterface):
             raise
 
     def save_session(self, app, session, response):
+        if request.environ.get('nexus.session_busy') or request.environ.get('nexus.session_skipped'):
+            return
         try:
             return super().save_session(app, session, response)
         finally:
@@ -136,6 +143,16 @@ def add_user_handling(app):
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
     app.session_interface = LockedFileSystemSessionInterface(app)
+
+    @app.before_request
+    def reject_busy_session():
+        if request.environ.get('nexus.session_busy'):
+            response = jsonify(error='Session busy, retry request')
+            response.status_code = 503
+            response.headers['Retry-After'] = '1'
+            response.headers['X-Session-Busy'] = '1'
+            response.headers['Cache-Control'] = 'no-store'
+            return response
 
     @app.teardown_request
     def release_session_lock(error):

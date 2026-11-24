@@ -22,7 +22,10 @@ The production Docker image serves `main:app` with Gunicorn on `PORT` (default
 8080). It uses one worker with eight threads. Requests from different sessions
 and health checks can run concurrently; requests sharing a session are serialized
 from session load through save so refresh-token rotation and session writes cannot
-race. Keep one worker and one replica with this in-process lock and filesystem
+race. If a session is busy, the server responds with 503 and `Retry-After: 1`
+without waiting on the worker thread. Vue queues its own requests and retries
+that specific response for a bounded period; requests from other tabs may still
+need to be retried. Keep one worker and one replica with this in-process lock and filesystem
 session store; scaling either requires a shared session store and cross-process
 coordination. Gunicorn access logs remain disabled because they could contain
 patient identifiers.

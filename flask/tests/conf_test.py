@@ -237,23 +237,35 @@ def test_concurrent_requests_refresh_once_without_blocking_health(app):
             request_client.set_cookie('session', session_id)
             return request_client.get('/api/home-ressource')
 
+    def get_health():
+        with app.test_client() as request_client:
+            request_client.set_cookie('session', sid)
+            return request_client.get('/healthz')
+
     upstream = Mock(status_code=200, content=b'{}', headers={})
     with patch('user_handling.time.time', return_value=1000), \
             patch('user_handling.requests.post', side_effect=refresh) as token_request, \
             patch('api_endpoints.requests.request', return_value=upstream) as nexus, \
-            ThreadPoolExecutor(max_workers=4) as executor:
+            ThreadPoolExecutor(max_workers=8) as executor:
         try:
             first = executor.submit(get_home, sid)
             assert started.wait(2)
-            second = executor.submit(get_home, sid)
-            health = executor.submit(lambda: app.test_client().get('/healthz'))
+            contenders = [executor.submit(get_home, sid) for _ in range(7)]
+            health = executor.submit(get_health)
             other = executor.submit(get_home, other_sid)
+            for contender in contenders:
+                busy = contender.result(timeout=2)
+                assert busy.status_code == 503
+                assert busy.headers['Retry-After'] == '1'
+                assert busy.headers['X-Session-Busy'] == '1'
+                assert busy.headers['Cache-Control'] == 'no-store'
+                assert busy.headers.get('Set-Cookie') is None
             assert health.result(timeout=2).status_code == 200
             assert other.result(timeout=2).status_code == 200
         finally:
             release.set()
         assert first.result(timeout=5).status_code == 200
-        assert second.result(timeout=5).status_code == 200
+        assert get_home(sid).status_code == 200
 
     token_request.assert_called_once()
     auth_headers = [call.kwargs['headers']['Authorization'] for call in nexus.call_args_list]
@@ -277,7 +289,7 @@ def test_concurrent_csrf_requests_share_token(app):
     def get_csrf():
         with app.test_client() as request_client:
             request_client.set_cookie('session', sid)
-            return request_client.get('/api/csrf').get_json()['token']
+            return request_client.get('/api/csrf')
 
     with patch('api_endpoints.secrets.token_urlsafe', side_effect=create_token) as generate, \
             ThreadPoolExecutor(max_workers=2) as executor:
@@ -285,8 +297,9 @@ def test_concurrent_csrf_requests_share_token(app):
             first = executor.submit(get_csrf)
             assert started.wait(2)
             second = executor.submit(get_csrf)
+            assert second.result(timeout=2).status_code == 503
         finally:
             release.set()
-        assert first.result(timeout=5) == second.result(timeout=5) == 'one-csrf-token'
+        assert first.result(timeout=5).get_json()['token'] == get_csrf().get_json()['token'] == 'one-csrf-token'
 
     generate.assert_called_once()
