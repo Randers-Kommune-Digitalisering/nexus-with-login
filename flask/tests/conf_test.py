@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import Mock, patch
 from main import create_app
+from utils.config import nexus_path
 
 
 @pytest.fixture()
@@ -31,6 +32,56 @@ def test_session_status_anonymous_does_not_fetch_nexus(client):
         assert response.get_json() == {'authenticated': False}
         assert response.headers['Cache-Control'] == 'no-store'
         nexus.assert_not_called()
+
+
+def test_citizen_list_config_exposes_runtime_paths(client):
+    with client.session_transaction() as session:
+        session['token'] = {'access_token': 'valid-access'}
+
+    response = client.get('/api/citizen-list-config')
+
+    assert response.status_code == 200
+    assert response.headers['Cache-Control'] == 'no-store'
+    assert response.get_json()['nexusPaths'] == {
+        'formPrototype': 'patients/{patient_id}/example-prototype',
+        'formAction': 'patients/{patient_id}/example-actions',
+        'flatReferences': 'patients/{patient_id}/example-references',
+        'citizenPage': '/example-citizen/{patient_id}',
+        'orderPage': '/example-order/{patient_id}',
+    }
+
+
+def test_orders_use_configured_upstream_path(client):
+    with client.session_transaction() as session:
+        session['token'] = {'access_token': 'valid-access', 'expires_at': 1100}
+
+    upstream = Mock(status_code=200, content=b'[]', headers={})
+    with patch('user_handling.time.time', return_value=1000), \
+            patch('api_endpoints.requests.request', return_value=upstream) as nexus:
+        response = client.get('/api/hcl-depot/orders?patientId=123&inProgress=true')
+
+    assert response.status_code == 200
+    assert nexus.call_args.args == ('GET', 'https://example.com/api/example-orders')
+    assert nexus.call_args.kwargs['params'] == [('patientId', '123'), ('inProgress', 'true')]
+
+
+@pytest.mark.parametrize('path', (
+    'https://other.example/orders',
+    '//other.example/orders',
+    '/api/orders?token=value',
+))
+def test_invalid_orders_api_path_fails_at_startup(monkeypatch, path):
+    monkeypatch.setenv('NEXUS_ORDERS_API_PATH', path)
+
+    with pytest.raises(ValueError, match='NEXUS_ORDERS_API_PATH'):
+        nexus_path('NEXUS_ORDERS_API_PATH', absolute=True)
+
+
+def test_patient_path_requires_placeholder(monkeypatch):
+    monkeypatch.setenv('NEXUS_FORM_ACTION_PATH', 'patients/forms')
+
+    with pytest.raises(ValueError, match='NEXUS_FORM_ACTION_PATH'):
+        nexus_path('NEXUS_FORM_ACTION_PATH', patient=True)
 
 
 def test_session_status_valid_token(client):

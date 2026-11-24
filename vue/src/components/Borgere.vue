@@ -8,6 +8,7 @@ import { citizenListViewKey, readCitizenListView, saveCitizenListView } from '..
 const props = defineProps({ homeResource: { type: Object, required: true } });
 const citizenLists = ref([]);
 const nexusBaseUrl = ref('');
+const nexusPaths = ref(null);
 const selectedId = ref('');
 const patientRecords = ref([]);
 const allPatientRecords = ref(null);
@@ -178,8 +179,9 @@ const sortBy = async (field) => {
 };
 const sortIcon = (field) => sortField.value === field
     ? (sortDirection.value === 'ascending' ? ArrowUp : ArrowDown) : ArrowUpDown;
-const citizenHref = (patient) => /^\d+$/.test(String(patient?.id ?? ''))
-    ? `${nexusBaseUrl.value}/citizen/${patient.id}` : null;
+const patientPath = (template, patientId) => template.replace('{patient_id}', patientId);
+const citizenHref = (patient) => nexusPaths.value && /^\d+$/.test(String(patient?.id ?? ''))
+    ? `${nexusBaseUrl.value}${patientPath(nexusPaths.value.citizenPage, patient.id)}` : null;
 const noteStatus = (value) => {
     const name = typeof value === 'string' ? value : value?.name;
     if (typeof name !== 'string') return '';
@@ -233,7 +235,7 @@ const addNote = async (patient, rowIndex) => {
         const patientId = String(patient?.id ?? '');
         if (!/^\d+$/.test(patientId)) throw new Error('Invalid patient ID');
         const prototypeLink = nexusLink(
-            `patients/${patientId}/forms/prototype?formDefinitionId=${noteFormDefinitionId}&programPathwayId=${programPathwayId}&placement=PATHWAY`,
+            `${patientPath(nexusPaths.value.formPrototype, patientId)}?formDefinitionId=${noteFormDefinitionId}&programPathwayId=${programPathwayId}&placement=PATHWAY`,
             new URL('./', preferencesUrl),
         );
         const response = await fetch(prototypeLink.proxy);
@@ -387,7 +389,7 @@ const saveNote = async () => {
             if (!/^\d+$/.test(actionId)) throw new Error('Invalid action ID');
             const patientId = String(state.patient?.id ?? '');
             if (!/^\d+$/.test(patientId)) throw new Error('Invalid patient ID');
-            updateProxy = nexusLink(`patients/${patientId}/forms?actionId=${actionId}`,
+            updateProxy = nexusLink(`${patientPath(nexusPaths.value.formAction, patientId)}?actionId=${actionId}`,
                 new URL('./', preferencesUrl)).proxy;
         } else {
             failureMessage = 'Handlingen mangler et gyldigt updateFormData-link.';
@@ -458,7 +460,10 @@ const fetchLatestNoteDate = async (patient) => {
     const patientId = String(patient?.id ?? '');
     if (!/^\d+$/.test(patientId)) return null;
     try {
-        const response = await fetch(`/api/nexus/patients/${patientId}/pathways/flatReferences?filterId=${referenceFilterId}`);
+        const response = await fetch(nexusLink(
+            `${patientPath(nexusPaths.value.flatReferences, patientId)}?filterId=${referenceFilterId}`,
+            new URL('./', preferencesUrl),
+        ).proxy);
         if (!response.ok) return null;
         const references = await response.json();
         return Array.isArray(references) ? latestReference(references)?.date ?? null : null;
@@ -470,13 +475,15 @@ const fetchLatestNoteDate = async (patient) => {
 const additionalInfoForPatient = async (patient) => {
     const patientId = String(patient?.id ?? '');
     if (!/^\d+$/.test(patientId)) return { additionalInfo: {}, referenceDate: null, notes: [] };
-    const url = `/api/nexus/patients/${patientId}/pathways/flatReferences?filterId=${referenceFilterId}`;
     try {
-        const response = await fetch(url);
+        const sourceUrl = nexusLink(
+            `${patientPath(nexusPaths.value.flatReferences, patientId)}?filterId=${referenceFilterId}`,
+            new URL('./', preferencesUrl),
+        );
+        const response = await fetch(sourceUrl.proxy);
         if (!response.ok) return { additionalInfo: {}, referenceDate: null, notes: [] };
         const references = await response.json();
         if (!Array.isArray(references)) return { additionalInfo: {}, referenceDate: null, notes: [] };
-        const sourceUrl = new URL(`patients/${patientId}/pathways/flatReferences?filterId=${referenceFilterId}`, new URL('./', preferencesUrl));
         const notes = references.map(entry => {
             const parsedDate = parseReferenceDate(entry);
             const fields = Object.fromEntries((Array.isArray(entry?.additionalInfo) ? entry.additionalInfo : [])
@@ -487,7 +494,7 @@ const additionalInfoForPatient = async (patient) => {
                 status: noteStatus(entry?.workflowState),
                 date: parsedDate,
                 referencedObjectHref: entry?._links?.referencedObject?.href,
-                sourceHref: new URL(entry?._links?.self?.href ?? sourceUrl.href, sourceUrl).href,
+                sourceHref: new URL(entry?._links?.self?.href ?? sourceUrl.url.href, sourceUrl.url).href,
             };
         }).sort((first, second) => (second.date ?? -Infinity) - (first.date ?? -Infinity));
         const latest = latestReference(references);
@@ -514,7 +521,7 @@ const inProgressOrdersForPatient = async (patient) => {
         }
         return {
             requestedDeliveryDate: formatDate(order.requestedDeliveryDate) || 'Ukendt leveringsdato',
-            href: `${nexusBaseUrl.value}/hcl-matching/citizen/${patientId}/overview/current`,
+            href: `${nexusBaseUrl.value}${patientPath(nexusPaths.value.orderPage, patientId)}`,
         };
     });
 };
@@ -523,11 +530,16 @@ const loadCitizenLists = async () => {
     try {
         const configResponse = await fetch('/api/citizen-list-config');
         if (!configResponse.ok) throw new Error(`Citizen list config: HTTP ${configResponse.status}`);
-        const { allowedCitizenListIds, nexusBaseUrl: configuredBaseUrl } = await configResponse.json();
+        const { allowedCitizenListIds, nexusBaseUrl: configuredBaseUrl, nexusPaths: configuredPaths } = await configResponse.json();
         const baseUrl = new URL(configuredBaseUrl);
         if (baseUrl.protocol !== 'https:' || baseUrl.pathname !== '/' || baseUrl.search || baseUrl.hash
             || baseUrl.username || baseUrl.password) throw new Error('Invalid Nexus base URL');
+        if (!configuredPaths || !['formPrototype', 'formAction', 'flatReferences', 'citizenPage', 'orderPage']
+            .every(key => typeof configuredPaths[key] === 'string' && configuredPaths[key].includes('{patient_id}'))) {
+            throw new Error('Invalid Nexus paths');
+        }
         nexusBaseUrl.value = baseUrl.origin;
+        nexusPaths.value = configuredPaths;
         const allowedIds = new Set((allowedCitizenListIds || '')
             .split(',').map(id => id.trim()).filter(id => /^\d+$/.test(id)));
         if (!allowedIds.size) {

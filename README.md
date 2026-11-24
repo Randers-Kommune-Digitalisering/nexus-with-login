@@ -1,36 +1,40 @@
-# Vue/Flask App brugerdefineret Nexus indhold
-App der håndterer log ind / brygerstyring til Nexus og viser brugerdefineret indhold + brugedefineret interaktion.
+# Vue/Flask app for custom Nexus content
+This app handles Nexus login and user management and displays custom content and interactions.
 
-**NB**: Automatisk test, build og deploy til prod sker kun ved push af et
-versionstag (`v*.*.*`), hvis taggets commit er på `main`. Docker-imaget og
-deployment bruger det præcise tag (inklusive `v`). Det separate manuelle
-build-workflow er stadig tilgængeligt.
+**Note:** Automatic testing, building, and production deployment occur only when
+a version tag (`v*.*.*`) is pushed and its commit is on `main`. The Docker image
+and deployment use the exact tag (including `v`). The separate manual build
+workflow is still available.
 
-## Kørsel af frontend + backend i docker
-* Kør ```docker-compose up``` i top dir
-* Backend på port 8080, frontend på port 3000
+## Run frontend and backend in Docker
+* Run ```docker-compose up``` from the repository root.
+* Backend runs on port 8080; frontend runs on port 3000.
 
-## Kørsel af Frontenden(Vue)
-* CD hen til vue folder: ``` cd vue ```
-* Installerer afhængigheder: ``` npm install ```
-* Compile, hot reload og start frontenden: ``` npm run dev ```
+## Run the frontend (Vue)
+* Change to the Vue directory: ```cd vue```
+* Install dependencies: ```npm install```
+* Build, hot-reload, and start the frontend: ```npm run dev```
 
-## Kørsel af Backend (Python)
-* Start applikationen: ``` python flask/src/main.py ```
+## Run the backend (Python)
+* Start the development server: ```python flask/src/main.py```
 
-## Udviklings commands:
-* Bygge docker image: ```docker build -t vue-python-template .```
-* Kør container ud fra det image man byggede: ```docker run -p 8080:8080 vue-python-template```
+The production Docker image serves `main:app` with Gunicorn on `PORT` (default
+8080). It uses one worker with the current filesystem-backed session store and
+does not enable Gunicorn access logs, which could contain patient identifiers.
+
+## Development commands
+* Build a Docker image: ```docker build -t vue-python-template .```
+* Run the image: ```docker run -p 8080:8080 vue-python-template```
 * Lint: ```flake8 python/src tests --count --select=E9,F63,F7,F82 --show-source --statistics```
-* Unit tests: ``` pytest ```
+* Unit tests: ```pytest```
 
 ## Nexus API from Vue
 
 Vue checks `GET /user/session` on page load; it returns only an authentication
 boolean and does not cache the response. Only authenticated sessions request
 `GET /api/home-ressource` to fetch the
-Nexus home resource. Other HAL links under
-`https://randers.nexus.kmd.dk/api/core/mobile/randers/v2/` can be requested through
+Nexus home resource. Other HAL links under the configured `BASE_URL` and `BASE_PATH`
+can be requested through
 `/api/nexus/<path>` with GET, POST, or PUT. Resolve relative links against the Nexus
 URL of the response that supplied them, then send the path and query to the local
 proxy. Flask keeps the user's access token in its session and sends it to Nexus;
@@ -40,23 +44,24 @@ patient ID in `sessionStorage`, restoring them only after fresh Nexus data loads
 It clears this view state on logout or when the session is no longer authenticated.
 Note text, patient records, and unsaved edits are never stored in browser storage.
 Without a saved selection, the first allowed citizen list opens automatically.
-When creating a note, `Kladde` is preselected if Nexus offers that action;
+When creating a note, `Kladde` (Draft) is preselected if Nexus offers that action;
 otherwise the user must choose a status. New notes start with the subject
-`Afslutning af borger`, which can be edited before saving. CPR in the citizen
+`Afslutning af borger` (Closing a citizen case), which can be edited before saving. CPR in the citizen
 list links to the corresponding Nexus citizen page in a new tab; the name is
 plain text. The link uses the configured `BASE_URL` and the citizen ID, not the CPR.
 Clicking the CPR link also expands that citizen's notes in the list.
 For each citizen on the visible page, the list also requests
 `GET /api/hcl-depot/orders?patientId=<id>&inProgress=true` through Flask.
-The "Igangværende ordrer" column shows each order's `requestedDeliveryDate`
-as dd/mm/yy (or "Ukendt leveringsdato" when absent), linked to the Nexus
-`/hcl-matching/citizen/<patient id>/overview/current` page in a new tab. Orders are not stored in browser
+The "Igangværende ordrer" (In-progress orders) column shows each order's `requestedDeliveryDate`
+as dd/mm/yy (or "Ukendt leveringsdato", Unknown delivery date, when absent), linked to the Nexus
+page configured by `NEXUS_ORDER_PAGE_PATH` in a new tab. Orders are not stored in browser
 storage. Clicking an order link also expands that citizen's notes
-in the list. The app suppresses request logs for this route because the query
-contains a patient ID; upstream and ingress logs should likewise avoid
-retaining patient identifiers.
+in the list. The app suppresses request logs for Nexus proxy routes and URLs with query
+parameters because they can contain patient identifiers or authorization codes;
+upstream and ingress logs should likewise avoid retaining sensitive paths and
+queries.
 For new notes, Vue follows the form prototype's `availablePathwayAssociation`
-link and offers active pathways in the `Forløb` selector, including nested
+link and offers active pathways in the `Forløb` (Pathway) selector, including nested
 pathways. It initially selects the configured `programPathwayId` if active,
 otherwise the active pathway with `programPathwayId` 1, then 2. If none exists,
 creation is blocked. Saving assigns the selected pathway as the placement object
@@ -80,11 +85,25 @@ The default Nexus origin is set by `BASE_URL` and its API prefix by `BASE_PATH`.
 Set them in the app environment when targeting a different Nexus installation;
 keep `BASE_URL` to the origin, without the API path. `APP_URL` is the separate
 public URL used for the login redirect.
+Set the following Nexus-specific paths in the server environment (or
+`flask/src/.env` for local development) before starting the app:
+
+* `NEXUS_ORDERS_API_PATH`: absolute path to the orders API on `BASE_URL`.
+* `NEXUS_FORM_PROTOTYPE_PATH`, `NEXUS_FORM_ACTION_PATH`, and
+  `NEXUS_FLAT_REFERENCES_PATH`: paths relative to `BASE_PATH`, each with a
+  `{patient_id}` placeholder.
+* `NEXUS_CITIZEN_PAGE_PATH` and `NEXUS_ORDER_PAGE_PATH`: absolute page paths
+  on `BASE_URL`, each with a `{patient_id}` placeholder.
+
+These settings are required. Flask sends the browser-used paths in the
+authenticated, non-cached citizen-list configuration response, so changing
+them requires an app restart but not a Vue rebuild. They are not secrets:
+authenticated users can inspect them in the browser.
 
 Set `ALLOWED_CITIZEN_LIST_IDS` in the app's runtime environment (for example, on
 the Kubernetes pod) to comma-separated numeric preference IDs such as `101,102`.
 After login, Vue fetches the IDs from `GET /api/citizen-list-config` and displays
-only matching `CITIZEN_LIST` entries. If unset, the default is `5327,7279`;
+only matching `CITIZEN_LIST` entries. If unset, the default is `5327`;
 explicitly setting it to an empty string shows no lists. Restart the pod after
 changing its environment; the Vue image does not need rebuilding.
 The IDs are sent to the browser, so do not put secrets in this setting. This is

@@ -22,3 +22,26 @@ COOKIE_SECRET = os.environ['COOKIE_SECRET']
 
 MAX_WRITE_BYTES = 1024 * 1024
 ALLOWED_CITIZEN_LIST_IDS = os.getenv('ALLOWED_CITIZEN_LIST_IDS', '5327')
+
+
+def nexus_path(name, *, absolute=False, patient=False):
+    path = os.environ[name]
+    valid = (
+        bool(path),
+        path.startswith('/') == absolute,
+        not path.startswith('//'),
+        all(segment not in ('', '.', '..') for segment in path.strip('/').split('/')),
+        not any(character in path for character in '?#'),
+        path.count('{patient_id}') == int(patient),
+    )
+    if not all(valid):
+        raise ValueError(f'Invalid {name} path')
+    return path
+
+
+NEXUS_ORDERS_API_PATH = nexus_path('NEXUS_ORDERS_API_PATH', absolute=True)
+NEXUS_FORM_PROTOTYPE_PATH = nexus_path('NEXUS_FORM_PROTOTYPE_PATH', patient=True)
+NEXUS_FORM_ACTION_PATH = nexus_path('NEXUS_FORM_ACTION_PATH', patient=True)
+NEXUS_FLAT_REFERENCES_PATH = nexus_path('NEXUS_FLAT_REFERENCES_PATH', patient=True)
+NEXUS_CITIZEN_PAGE_PATH = nexus_path('NEXUS_CITIZEN_PAGE_PATH', absolute=True, patient=True)
+NEXUS_ORDER_PAGE_PATH = nexus_path('NEXUS_ORDER_PAGE_PATH', absolute=True, patient=True)

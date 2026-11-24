@@ -2,7 +2,11 @@ import logging
 import hmac
 import secrets
 import requests
-from utils.config import MAX_WRITE_BYTES, BASE_URL, BASE_PATH, ALLOWED_CITIZEN_LIST_IDS
+from utils.config import (
+    MAX_WRITE_BYTES, BASE_URL, BASE_PATH, ALLOWED_CITIZEN_LIST_IDS,
+    NEXUS_ORDERS_API_PATH, NEXUS_FORM_PROTOTYPE_PATH, NEXUS_FORM_ACTION_PATH,
+    NEXUS_FLAT_REFERENCES_PATH, NEXUS_CITIZEN_PAGE_PATH, NEXUS_ORDER_PAGE_PATH,
+)
 
 from flask import Blueprint, Response, jsonify, request, session
 from user_handling import TokenRefreshUnavailable, current_access_token
@@ -26,7 +30,17 @@ def home_ressource():
 def citizen_list_config():
     if not session.get('token', {}).get('access_token'):
         return jsonify(error='Unauthorized'), 401
-    response = jsonify(allowedCitizenListIds=ALLOWED_CITIZEN_LIST_IDS, nexusBaseUrl=BASE_URL)
+    response = jsonify(
+        allowedCitizenListIds=ALLOWED_CITIZEN_LIST_IDS,
+        nexusBaseUrl=BASE_URL,
+        nexusPaths={
+            'formPrototype': NEXUS_FORM_PROTOTYPE_PATH,
+            'formAction': NEXUS_FORM_ACTION_PATH,
+            'flatReferences': NEXUS_FLAT_REFERENCES_PATH,
+            'citizenPage': NEXUS_CITIZEN_PAGE_PATH,
+            'orderPage': NEXUS_ORDER_PAGE_PATH,
+        },
+    )
     response.headers['Cache-Control'] = 'no-store'
     return response
 
@@ -56,7 +70,7 @@ def in_progress_orders():
         len(request.args.getlist('patientId')) != 1,
     )):
         return jsonify(error='Invalid order query'), 400
-    return nexus_request('orders', f'{BASE_URL}/api/hcl-depot/')
+    return nexus_request('', f'{BASE_URL}{NEXUS_ORDERS_API_PATH}')
 
 
 def nexus_request(resource, base_url=NEXUS_BASE):
