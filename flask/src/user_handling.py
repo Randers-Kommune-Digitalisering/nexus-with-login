@@ -1,11 +1,13 @@
 import logging
 import math
+import threading
 import time
+import weakref
 import requests
 
 from flask import Blueprint, jsonify, redirect, url_for, request, session
 from authlib.integrations.flask_client import OAuth
-from flask_session import Session
+from flask_session.filesystem import FileSystemSessionInterface
 
 from utils.config import COOKIE_SECRET, CLIENT_ID, CLIENT_SECRET, AUTH_URL, AUTH_PATH, AUTH_REALM, APP_URL
 
@@ -15,6 +17,50 @@ TOKEN_URL = f'{AUTH_URL}/{AUTH_PATH.strip("/")}/realms/{AUTH_REALM}/protocol/ope
 
 class TokenRefreshUnavailable(Exception):
     pass
+
+
+class LockedFileSystemSessionInterface(FileSystemSessionInterface):
+    def __init__(self, app):
+        super().__init__(app)
+        self._locks = weakref.WeakValueDictionary()
+        self._locks_guard = threading.Lock()
+
+    def open_session(self, app, request):
+        sid = request.cookies.get(app.config['SESSION_COOKIE_NAME'])
+        if request.path in ('/healthz', '/metrics') or request.path.startswith('/assets/'):
+            request.environ['nexus.session_skipped'] = True
+            return self.session_class(sid=sid)
+        if sid:
+            with self._locks_guard:
+                lock = self._locks.get(sid)
+                if lock is None:
+                    lock = threading.RLock()
+                    self._locks[sid] = lock
+        else:
+            lock = threading.RLock()
+        if not lock.acquire(blocking=False):
+            request.environ['nexus.session_busy'] = True
+            return self.session_class(sid=sid)
+        request.environ['nexus.session_lock'] = lock
+        try:
+            return super().open_session(app, request)
+        except Exception:
+            self.release_lock(request)
+            raise
+
+    def save_session(self, app, session, response):
+        if request.environ.get('nexus.session_busy') or request.environ.get('nexus.session_skipped'):
+            return
+        try:
+            return super().save_session(app, session, response)
+        finally:
+            self.release_lock(request)
+
+    @staticmethod
+    def release_lock(request):
+        lock = request.environ.pop('nexus.session_lock', None)
+        if lock is not None:
+            lock.release()
 
 
 def current_access_token():
@@ -93,11 +139,24 @@ def current_access_token():
 
 
 def add_user_handling(app):
-    app.config['SESSION_TYPE'] = 'filesystem'
     app.config['SESSION_COOKIE_SECURE'] = APP_URL.startswith('https://')
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-    Session(app)
+    app.session_interface = LockedFileSystemSessionInterface(app)
+
+    @app.before_request
+    def reject_busy_session():
+        if request.environ.get('nexus.session_busy'):
+            response = jsonify(error='Session busy, retry request')
+            response.status_code = 503
+            response.headers['Retry-After'] = '1'
+            response.headers['X-Session-Busy'] = '1'
+            response.headers['Cache-Control'] = 'no-store'
+            return response
+
+    @app.teardown_request
+    def release_session_lock(error):
+        app.session_interface.release_lock(request)
 
     app.secret_key = COOKIE_SECRET
     oauth = OAuth(app)
@@ -166,11 +225,19 @@ def add_user_handling(app):
         refreshToken = session['token']['refresh_token']
         endSessionEndpoint = f'{AUTH_URL}/{AUTH_PATH.strip("/")}/realms/{AUTH_REALM}/protocol/openid-connect/logout'
 
-        requests.post(endSessionEndpoint, data={
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
-            "refresh_token": refreshToken,
-        })
+        try:
+            response = requests.post(endSessionEndpoint, data={
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "refresh_token": refreshToken,
+            }, timeout=15, allow_redirects=False)
+        except requests.RequestException:
+            logger.warning('Logout request failed')
+            return jsonify(error='Authentication provider unavailable'), 502
+
+        if not 200 <= response.status_code < 300:
+            logger.warning('Logout endpoint returned status %s', response.status_code)
+            return jsonify(error='Authentication provider unavailable'), 502
 
         session.clear()
         return redirect('/')

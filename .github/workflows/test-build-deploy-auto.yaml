@@ -78,6 +78,12 @@ jobs:
       group: nexus-login-prod
       cancel-in-progress: false
     steps:
+      - name: Install yq
+        run: |
+          curl -fsSL https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64 -o "$RUNNER_TEMP/yq"
+          echo "0d6aaf1cf44a8d18fbc7ed0ef14f735a8df8d2e314c4cc0f0242d35c0a440c95  $RUNNER_TEMP/yq" | sha256sum --check
+          sudo install -m 755 "$RUNNER_TEMP/yq" /usr/local/bin/yq
+          yq --version
       - name: Checkout infrastructure repository
         uses: actions/checkout@v4
         with:
@@ -85,11 +91,6 @@ jobs:
           ref: prod
           path: infrastructure
           ssh-key: ${{ secrets.AUTO_DEPLOY }}
-      - name: Install yq
-        run: |
-          sudo wget -q https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64 -O /usr/local/bin/yq
-          sudo chmod +x /usr/local/bin/yq
-          yq --version
       - name: Update Nexus image tag
         env:
           IMAGE_TAG: ${{ github.ref_name }}

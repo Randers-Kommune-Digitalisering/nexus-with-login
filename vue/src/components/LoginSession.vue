@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue';
 import Content from './Content.vue';
 import { citizenListViewKey } from '../viewState';
+import { fetchWithSessionRetry } from '../sessionFetch';
 
 const emit = defineEmits(['session-change']);
 const isLoggedIn = ref(false);
@@ -9,7 +10,7 @@ const userName = ref(null);
 const loginError = ref('');
 
 const checkLogin = () => {
-    fetch('/user/session')
+    fetchWithSessionRetry('/user/session')
         .then(response => {
             if (!response.ok) throw new Error('Session status unavailable');
             return response.json();
@@ -22,7 +23,7 @@ const checkLogin = () => {
                 emit('session-change', null);
                 return null;
             }
-            return fetch('/api/home-ressource');
+            return fetchWithSessionRetry('/api/home-ressource');
         })
         .then(response => {
             if (!response) return null;
@@ -47,16 +48,16 @@ const checkLogin = () => {
 
 const loginLogout = () => {
     if (isLoggedIn.value) {
-        fetch('/user/logout')
+        fetchWithSessionRetry('/user/logout')
             .then(response => {
-                if (response.status === 200) {
-                    sessionStorage.removeItem(citizenListViewKey);
-                    isLoggedIn.value = false;
-                    userName.value = null;
-                    emit('session-change', null);
-                    loginError.value = '';
-                }
-            });
+                if (!response.ok) throw new Error('Logout unavailable');
+                sessionStorage.removeItem(citizenListViewKey);
+                isLoggedIn.value = false;
+                userName.value = null;
+                emit('session-change', null);
+                loginError.value = '';
+            })
+            .catch(() => { loginError.value = 'Kunne ikke logge ud.'; });
     } else {
         sessionStorage.removeItem(citizenListViewKey);
         window.location.href = '/user/login';

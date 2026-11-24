@@ -36,5 +36,4 @@ EXPOSE $PORT
 # Set user
 USER $USER_ID
 
-ENTRYPOINT ["python"]
-CMD ["main.py"]
+CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT} --workers 1 --threads 8 --timeout 45 main:app"]
